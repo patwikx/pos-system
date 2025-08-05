@@ -1,0 +1,387 @@
+// This is the Prisma schema for a restaurant Point of Sale system.
+// It is designed to be "enterprise-grade" for Tropicana Worldwide Corporation
+// with support for multiple branches, Next.js authentication, and enhanced
+// business logic for inventory and order management.
+
+// Use a relational database like PostgreSQL or MySQL.
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// The `generator` block configures the Prisma Client.
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --- ENUMS ---
+// Enums are used to define a specific set of allowed values for a field.
+
+// User roles for role-based access control.
+enum Role {
+  MANAGER
+  SERVER
+  HOST
+}
+
+// Status of a table in a full-service restaurant.
+enum TableStatus {
+  OPEN // Available for new customers
+  OCCUPIED // Currently seated with customers
+  BILL_PRINTED // Customers are ready to pay
+  CLEANING // Table needs to be cleaned before next seating
+}
+
+// Status of an order, from creation to completion.
+enum OrderStatus {
+  PENDING // Order is being built by the server
+  SENT_TO_KITCHEN // Order has been sent for preparation
+  CLOSED // Payment has been processed
+  CANCELLED // Order was canceled due to a pre-kitchen-send change
+  VOIDED // Order was paid for, but the transaction was voided
+}
+
+// Type of discount to be applied.
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+// Status of an individual order item for a Kitchen Display System (KDS).
+enum OrderItemStatus {
+  RECEIVED // Item has been sent to the kitchen
+  PREPARING // Item is currently being made
+  READY // Item is ready for pickup/serving
+  SERVED // Item has been delivered to the customer
+}
+
+// --- MODELS ---
+
+// Model for the restaurant itself. Each branch is a `Restaurant` instance.
+model Restaurant {
+  id            String   @id @default(uuid())
+  name          String
+  address       String
+  contactNumber String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users          User[]
+  tables         Table[]
+  menuCategories MenuCategory[]
+  orders         Order[]
+  inventory      InventoryItem[]
+  products       Product[]
+  scheduleShifts ScheduleShift[] // Corrected: Added the opposite relation field
+}
+
+// =============================================================
+// NextAuth.js Schema for Authentication
+// This section is based on the NextAuth.js Prisma adapter schema.
+// =============================================================
+
+model User {
+  id            String    @id @default(uuid())
+  name          String?
+  email         String    @unique
+  passwordHash  String?
+  emailVerified DateTime?
+  image         String?
+  role          Role      @default(SERVER)
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  accounts           Account[]
+  sessions           Session[]
+  orders             Order[]
+  voidedTransactions VoidedTransaction[]
+  auditLogs          AuditLog[]
+
+  // New relations for personnel management
+  scheduleShifts ScheduleShift[]
+}
+
+model Account {
+  id                String  @id @default(uuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(uuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// =============================================================
+// End of NextAuth.js Schema
+// =============================================================
+
+// A customer who can place an order. This is useful for loyalty programs.
+model Customer {
+  id          String  @id @default(uuid())
+  firstName   String?
+  lastName    String?
+  email       String?
+  phoneNumber String?
+  orders      Order[]
+}
+
+// Model for a physical table in the restaurant.
+model Table {
+  id          String      @id @default(uuid())
+  tableNumber Int
+  capacity    Int? // Optional: number of seats
+  status      TableStatus @default(OPEN)
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  tableSessions TableSession[]
+}
+
+// Tracks the occupancy of a table for a specific order.
+// This provides a history of table usage, which is more robust than a direct relation.
+model TableSession {
+  id        String    @id @default(uuid())
+  startTime DateTime  @default(now())
+  endTime   DateTime?
+
+  tableId String
+  table   Table  @relation(fields: [tableId], references: [id])
+
+  orderId String @unique // Corrected: Added @unique for one-to-one relation
+  order   Order  @relation(fields: [orderId], references: [id])
+}
+
+// A base model for all sellable items, tying them to a restaurant and price.
+// This abstraction is useful for managing products and menu items separately.
+model Product {
+  id          String  @id @default(uuid())
+  name        String
+  description String?
+  basePrice   Decimal
+  isAvailable Boolean @default(true) // For quick toggle during outages
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  menuItem      MenuItem?
+  inventoryItem InventoryItem?
+}
+
+// Model for a category on the menu (e.g., "Appetizers," "Entrees").
+model MenuCategory {
+  id   String @id @default(uuid())
+  name String
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  menuItems MenuItem[]
+}
+
+// Model for a single menu item, which links to a base product.
+model MenuItem {
+  id          String  @id @default(uuid())
+  // The price here can be different from the base product price (e.g., happy hour).
+  price       Decimal
+  isAvailable Boolean @default(true)
+
+  productId String  @unique
+  product   Product @relation(fields: [productId], references: [id])
+
+  categoryId String
+  category   MenuCategory @relation(fields: [categoryId], references: [id])
+
+  modifierGroups ModifierGroup[] @relation("MenuItemToModifierGroup")
+  orderItems     OrderItem[]
+}
+
+// Model for a group of modifiers (e.g., "Cooking Temperature," "Sauces").
+model ModifierGroup {
+  id       String  @id @default(uuid())
+  name     String
+  isForced Boolean @default(false) // If a selection is mandatory
+
+  modifiers Modifier[]
+  menuItems MenuItem[] @relation("MenuItemToModifierGroup")
+}
+
+// Model for a single modifier option (e.g., "Medium Rare," "Add Cheese").
+model Modifier {
+  id              String  @id @default(uuid())
+  name            String
+  priceAdjustment Decimal @default(0.00) // The extra cost for this modifier
+
+  modifierGroupId String
+  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id])
+
+  appliedModifiers AppliedModifier[]
+}
+
+// Model for a customer order.
+model Order {
+  id          String      @id @default(uuid())
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  status      OrderStatus @default(PENDING)
+  totalAmount Decimal     @default(0.00)
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  serverId String
+  server   User   @relation(fields: [serverId], references: [id])
+
+  tableSession TableSession?
+
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  discountId String?
+  discount   Discount? @relation(fields: [discountId], references: [id])
+
+  orderItems OrderItem[]
+  payments   Payment[]
+  tips       Tip[]
+
+  // New relationship for voided transactions.
+  voidedTransaction VoidedTransaction?
+}
+
+// Model for an individual item within an order.
+model OrderItem {
+  id       String  @id @default(uuid())
+  quantity Int
+  price    Decimal // Price at the time of ordering
+  notes    String? // e.g., "extra sauce on the side"
+
+  // New field for KDS status.
+  status OrderItemStatus @default(RECEIVED)
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  menuItemId String
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
+
+  appliedModifiers AppliedModifier[]
+}
+
+// Model for a modifier that was actually applied to an order item.
+model AppliedModifier {
+  id String @id @default(uuid())
+
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
+
+  modifierId String
+  modifier   Modifier @relation(fields: [modifierId], references: [id])
+}
+
+// Model for a payment transaction.
+model Payment {
+  id          String   @id @default(uuid())
+  amount      Decimal
+  method      String // e.g., "Credit Card," "Cash"
+  processedAt DateTime @default(now())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+}
+
+// Model for a discount (e.g., "Happy Hour 15% off").
+model Discount {
+  id    String       @id @default(uuid())
+  name  String
+  type  DiscountType
+  value Decimal // e.g., 0.15 for a percentage, or 5.00 for a fixed amount
+
+  orders Order[]
+}
+
+// Model for tip information.
+model Tip {
+  id            String   @id @default(uuid())
+  amount        Decimal
+  tipPercentage Decimal
+  processedAt   DateTime @default(now())
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id])
+}
+
+// Model for inventory items, which now track a base product.
+model InventoryItem {
+  id                String @id @default(uuid())
+  currentStock      Int
+  minStockThreshold Int    @default(10) // Alert when stock drops below this
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+
+  productId String  @unique
+  product   Product @relation(fields: [productId], references: [id])
+}
+
+// --- NEW MODELS ---
+
+// Model for a voided transaction. This tracks a paid order that was later voided.
+// It is different from a `CANCELLED` order, which has not been paid for.
+model VoidedTransaction {
+  id       String   @id @default(uuid())
+  voidedAt DateTime @default(now())
+  reason   String // A description of why the transaction was voided
+
+  orderId String @unique
+  order   Order  @relation(fields: [orderId], references: [id])
+
+  voidedById String
+  voidedBy   User   @relation(fields: [voidedById], references: [id])
+}
+
+// A comprehensive audit log to track changes to critical data.
+model AuditLog {
+  id         String   @id @default(uuid())
+  timestamp  DateTime @default(now())
+  entityName String // e.g., "Order", "MenuItem", "User"
+  entityId   String // The ID of the record that was changed
+  action     String // e.g., "CREATE", "UPDATE", "DELETE"
+  oldData    Json? // The state of the record before the change (serialized to JSON)
+  newData    Json? // The state of the record after the change (serialized to JSON)
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+}
+
+// --- NEW MODELS FOR PERSONNEL AND KDS MANAGEMENT ---
+
+// Model to define an employee's work schedule.
+model ScheduleShift {
+  id        String   @id @default(uuid())
+  startTime DateTime
+  endTime   DateTime
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  restaurantId String
+  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+}
