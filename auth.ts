@@ -1,81 +1,64 @@
 import NextAuth from "next-auth";
 import { PrismaAdapter } from "@auth/prisma-adapter";
-import Credentials from "next-auth/providers/credentials";
-import { PrismaClient } from "@prisma/client";
-import bcrypt from "bcryptjs";
+import prismadb from "@/lib/db";
+import { authConfig } from "./auth.config";
+import { UserAssignment } from "@/next-auth"; // Ensure this import path is correct
 
-// Initialize Prisma Client
-const prisma = new PrismaClient();
-
-export const { handlers, signIn, signOut, auth } = NextAuth({
-  adapter: PrismaAdapter(prisma),
+export const {
+  handlers: { GET, POST },
+  auth,
+  signIn,
+  signOut,
+} = NextAuth({
+  adapter: PrismaAdapter(prismadb),
   session: { strategy: "jwt" },
-  providers: [
-    Credentials({
-      // You can specify a custom login form here, but we will build our own.
-      // credentials: { ... }
-
-      async authorize(credentials) {
-       if (!credentials?.email || !credentials.passwordHash) {
-          return null;
-        }
-
-        // 1. Find the user in the database
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email as string },
-        });
-
-        if (!user) {
-          // User not found
-          return null;
-        }
-
-        // 2. Verify the password
-        const isPasswordValid = await bcrypt.compare(
-          credentials.passwordHash as string,
-          user.passwordHash || "" // Ensure passwordHash is defined
-        );
-
-        if (!isPasswordValid) {
-          // Invalid password
-          return null;
-        }
-
-        // 3. Return the user object if credentials are valid
-        // The user object will be encoded in the JWT.
-        return {
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            role: user.role,
-        };
-      },
-    }),
-  ],
+  pages: {
+    signIn: "/auth/sign-in",
+    error: "/auth/error",
+  },
+  ...authConfig, // Spreads in your providers
   callbacks: {
-    // The `session` callback is called whenever a session is checked.
-    async session({ session, token }) {
-      if (token) {
-        session.user.id = token.sub as string;
-        session.user.employeeId = token.employeeId as string;
-        session.user.email = token.email as string;
-        session.user.name = token.name as string;
-      }
-      return session;
+    // This callback checks if a user is active before allowing sign in
+    async signIn({ user }) {
+      if (!user?.id) return false;
+      const existingUser = await prismadb.user.findUnique({ where: { id: user.id } });
+      return !!existingUser?.isActive; // Return true only if user is found and active
     },
-    // The `jwt` callback is called whenever a JWT is created or updated.
-    async jwt({ token, user }) {
-      if (user) {
-        token.role = user.role; // Add role to JWT
-        token.name = user.name;
-      }
+
+    // This callback fetches assignments and adds them to the token
+    async jwt({ token }) {
+      if (!token.sub) return token;
+      
+      const userWithAssignments = await prismadb.user.findUnique({
+          where: { id: token.sub },
+          include: { assignments: { include: { role: true, businessUnit: true } } }
+      });
+
+      if (!userWithAssignments) return token;
+
+      const leanAssignments: UserAssignment[] = userWithAssignments.assignments.map((a) => ({
+        businessUnitId: a.businessUnitId,
+        businessUnit: { id: a.businessUnit.id, name: a.businessUnit.name },
+        role: { id: a.role.id, role: a.role.role },
+      }));
+
+      token.id = userWithAssignments.id;
+      token.name = userWithAssignments.name;
+      token.isActive = userWithAssignments.isActive;
+      token.assignments = leanAssignments;
+      
       return token;
     },
+
+    // This callback populates the session with data from the token
+    async session({ token, session }) {
+      if (token.sub && session.user) {
+        session.user.id = token.id as string;
+        session.user.name = token.name;
+        session.user.isActive = token.isActive as boolean;
+        session.user.assignments = token.assignments;
+      }
+      return session;
+    }
   },
-  pages: {
-    signIn: "/login", // Redirect users to our custom login page
-  },
-  // Add secret for production environments
-  secret: process.env.AUTH_SECRET,
 });
-export default auth;

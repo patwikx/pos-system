@@ -1,387 +1,372 @@
-// This is the Prisma schema for a restaurant Point of Sale system.
-// It is designed to be "enterprise-grade" for Tropicana Worldwide Corporation
-// with support for multiple branches, Next.js authentication, and enhanced
-// business logic for inventory and order management.
-
-// Use a relational database like PostgreSQL or MySQL.
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
-// The `generator` block configures the Prisma Client.
+// 2. Define the generator. This tells Prisma to generate the Prisma Client.
+// The client is a type-safe query builder for your models.
 generator client {
   provider = "prisma-client-js"
 }
 
-// --- ENUMS ---
-// Enums are used to define a specific set of allowed values for a field.
-
-// User roles for role-based access control.
-enum Role {
-  MANAGER
-  SERVER
-  HOST
-}
-
-// Status of a table in a full-service restaurant.
-enum TableStatus {
-  OPEN // Available for new customers
-  OCCUPIED // Currently seated with customers
-  BILL_PRINTED // Customers are ready to pay
-  CLEANING // Table needs to be cleaned before next seating
-}
-
-// Status of an order, from creation to completion.
-enum OrderStatus {
-  PENDING // Order is being built by the server
-  SENT_TO_KITCHEN // Order has been sent for preparation
-  CLOSED // Payment has been processed
-  CANCELLED // Order was canceled due to a pre-kitchen-send change
-  VOIDED // Order was paid for, but the transaction was voided
-}
-
-// Type of discount to be applied.
-enum DiscountType {
-  PERCENTAGE
-  FIXED
-}
-
-// Status of an individual order item for a Kitchen Display System (KDS).
-enum OrderItemStatus {
-  RECEIVED // Item has been sent to the kitchen
-  PREPARING // Item is currently being made
-  READY // Item is ready for pickup/serving
-  SERVED // Item has been delivered to the customer
-}
-
-// --- MODELS ---
-
-// Model for the restaurant itself. Each branch is a `Restaurant` instance.
-model Restaurant {
-  id            String   @id @default(uuid())
-  name          String
-  address       String
-  contactNumber String?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-
-  users          User[]
-  tables         Table[]
-  menuCategories MenuCategory[]
-  orders         Order[]
-  inventory      InventoryItem[]
-  products       Product[]
-  scheduleShifts ScheduleShift[] // Corrected: Added the opposite relation field
-}
-
-// =============================================================
-// NextAuth.js Schema for Authentication
-// This section is based on the NextAuth.js Prisma adapter schema.
-// =============================================================
+// --- CORE INFRASTRUCTURE (Adapted for Restaurant) ---
 
 model User {
-  id            String    @id @default(uuid())
-  name          String?
-  email         String    @unique
-  passwordHash  String?
-  emailVerified DateTime?
-  image         String?
-  role          Role      @default(SERVER)
+  id        String   @id @default(uuid())
+  name      String?
+  username  String?  @unique
+  password  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  isActive  Boolean  @default(false)
+  orders    Order[]
 
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-
-  accounts           Account[]
-  sessions           Session[]
-  orders             Order[]
-  voidedTransactions VoidedTransaction[]
-  auditLogs          AuditLog[]
-
-  // New relations for personnel management
-  scheduleShifts ScheduleShift[]
+  // A user can be assigned to many business units, each with a specific role.
+  assignments UserBusinessUnit[]
 }
 
-model Account {
-  id                String  @id @default(uuid())
-  userId            String
-  type              String
-  provider          String
-  providerAccountId String
-  refresh_token     String?
-  access_token      String?
-  expires_at        Int?
-  token_type        String?
-  scope             String?
-  id_token          String?
-  session_state     String?
+model Roles {
+  id        String   @id @default(uuid())
+  role      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([provider, providerAccountId])
+  // A role can be assigned to many user/business unit combinations
+  assignments UserBusinessUnit[]
 }
 
-model Session {
-  id           String   @id @default(uuid())
-  sessionToken String   @unique
-  userId       String
-  expires      DateTime
-  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+model BusinessUnit {
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // A business unit can have many users assigned to it
+  userAssignments UserBusinessUnit[]
+
+  // Other relations remain the same
+  tables         Table[]
+  terminals      PosTerminal[]
+  menuCategories MenuCategory[]
+  inventoryItems InventoryItem[]
+  inventoryStock InventoryStock[]
+  purchaseOrders PurchaseOrder[]
+  orders         Order[]
+  discounts      Discount[]
+  menuItems      MenuItem[]
 }
 
-// =============================================================
-// End of NextAuth.js Schema
-// =============================================================
+model UserBusinessUnit {
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
 
-// A customer who can place an order. This is useful for loyalty programs.
-model Customer {
-  id          String  @id @default(uuid())
-  firstName   String?
-  lastName    String?
-  email       String?
-  phoneNumber String?
-  orders      Order[]
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+
+  roleId String
+  role   Roles  @relation(fields: [roleId], references: [id])
+
+  assignedAt DateTime @default(now())
+
+  @@id([userId, businessUnitId])
 }
 
-// Model for a physical table in the restaurant.
-model Table {
-  id          String      @id @default(uuid())
-  tableNumber Int
-  capacity    Int? // Optional: number of seats
-  status      TableStatus @default(OPEN)
+model PosTerminal {
+  id             String       @id @default(uuid())
+  name           String // e.g., "Counter 1", "Bar Terminal"
+  description    String? // Optional description for the terminal
+  isActive       Boolean      @default(true) // To easily enable/disable terminals
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  orders         Order[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-
-  tableSessions TableSession[]
+  @@index([businessUnitId])
 }
 
-// Tracks the occupancy of a table for a specific order.
-// This provides a history of table usage, which is more robust than a direct relation.
-model TableSession {
-  id        String    @id @default(uuid())
-  startTime DateTime  @default(now())
-  endTime   DateTime?
+// --- MENU MANAGEMENT ---
 
-  tableId String
-  table   Table  @relation(fields: [tableId], references: [id])
-
-  orderId String @unique // Corrected: Added @unique for one-to-one relation
-  order   Order  @relation(fields: [orderId], references: [id])
-}
-
-// A base model for all sellable items, tying them to a restaurant and price.
-// This abstraction is useful for managing products and menu items separately.
-model Product {
-  id          String  @id @default(uuid())
-  name        String
-  description String?
-  basePrice   Decimal
-  isAvailable Boolean @default(true) // For quick toggle during outages
-
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-
-  menuItem      MenuItem?
-  inventoryItem InventoryItem?
-}
-
-// Model for a category on the menu (e.g., "Appetizers," "Entrees").
 model MenuCategory {
-  id   String @id @default(uuid())
-  name String
+  id             String       @id @default(uuid())
+  name           String // e.g., "Appetizers", "Main Courses", "Drinks", "Desserts"
+  description    String? // Optional description for the category
+  isActive       Boolean      @default(true) // To easily enable/disable categories
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  menuItems      MenuItem[]
 
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  // For routing to a Kitchen Display System (KDS)
+  prepStation String? // e.g., "Hot Kitchen", "Grill", "Bar"
 
-  menuItems MenuItem[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessUnitId])
 }
 
-// Model for a single menu item, which links to a base product.
 model MenuItem {
   id          String  @id @default(uuid())
-  // The price here can be different from the base product price (e.g., happy hour).
-  price       Decimal
-  isAvailable Boolean @default(true)
-
-  productId String  @unique
-  product   Product @relation(fields: [productId], references: [id])
+  name        String // e.g., "Classic Cheeseburger"
+  description String?
+  price       Float
+  imageUrl    String?
+  isActive    Boolean @default(true) // To easily enable/disable items
 
   categoryId String
   category   MenuCategory @relation(fields: [categoryId], references: [id])
 
-  modifierGroups ModifierGroup[] @relation("MenuItemToModifierGroup")
-  orderItems     OrderItem[]
+  // --- ADD THESE TWO LINES ---
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+
+  recipe     Recipe? // A menu item can have one recipe
+  orderItems OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([categoryId])
 }
 
-// Model for a group of modifiers (e.g., "Cooking Temperature," "Sauces").
-model ModifierGroup {
-  id       String  @id @default(uuid())
-  name     String
-  isForced Boolean @default(false) // If a selection is mandatory
+model Recipe {
+  id         String   @id @default(uuid())
+  menuItemId String   @unique // One-to-one with MenuItem
+  menuItem   MenuItem @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
 
-  modifiers Modifier[]
-  menuItems MenuItem[] @relation("MenuItemToModifierGroup")
+  // The list of ingredients and quantities for this menu item
+  recipeItems RecipeItem[]
+
+  description String? // e.g., "Grill patty for 5 mins..."
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 
-// Model for a single modifier option (e.g., "Medium Rare," "Add Cheese").
-model Modifier {
-  id              String  @id @default(uuid())
-  name            String
-  priceAdjustment Decimal @default(0.00) // The extra cost for this modifier
+model RecipeItem {
+  id              String        @id @default(uuid())
+  recipeId        String
+  recipe          Recipe        @relation(fields: [recipeId], references: [id])
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
 
-  modifierGroupId String
-  modifierGroup   ModifierGroup @relation(fields: [modifierGroupId], references: [id])
+  quantityUsed Float // How much of the ingredient is used (respects the UoM)
 
-  appliedModifiers AppliedModifier[]
+  @@index([recipeId])
+  @@index([inventoryItemId])
 }
 
-// Model for a customer order.
+// --- INVENTORY MANAGEMENT (for Raw Ingredients) ---
+
+model InventoryItem {
+  id             String       @id @default(uuid())
+  name           String // e.g., "Beef Patty 150g", "Brioche Bun", "Cheddar Cheese Slice"
+  description    String? // Optional description for the item
+  isActive       Boolean      @default(true) // To easily enable/disable items
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+
+  uomId String // Unit of Measure (e.g., kg, liter, piece)
+  uom   UoM    @relation(fields: [uomId], references: [id])
+
+  recipeItems RecipeItem[]
+  stockLevels InventoryStock[]
+  poItems     PurchaseOrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model InventoryStock {
+  id              String        @id @default(uuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  businessUnitId  String
+  businessUnit    BusinessUnit  @relation(fields: [businessUnitId], references: [id])
+
+  quantityOnHand Float // Current stock level
+  reorderPoint   Float @default(0) // Low stock threshold
+
+  updatedAt DateTime            @updatedAt
+  movements InventoryMovement[] // The missing back-relation
+
+  @@unique([inventoryItemId, businessUnitId])
+}
+
+model InventoryMovement {
+  id               String         @id @default(uuid())
+  inventoryStockId String
+  inventoryStock   InventoryStock @relation(fields: [inventoryStockId], references: [id])
+
+  type     MovementType // SALE_DEPLETION, RECEIVING, ADJUSTMENT, SPOILAGE
+  quantity Float // Change in quantity (+ or -)
+  reason   String?
+
+  // Optional link to the source of movement
+  orderId         String?
+  order           Order?         @relation(fields: [orderId], references: [id])
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([inventoryStockId])
+}
+
+enum MovementType {
+  SALE_DEPLETION
+  RECEIVING
+  ADJUSTMENT
+  SPOILAGE
+}
+
+// --- OPERATIONS & SALES ---
+
+model Table {
+  id             String       @id @default(uuid())
+  name           String // e.g., "Table 5", "Bar Seat 2"
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  status         TableStatus  @default(AVAILABLE)
+  orders         Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+}
+
 model Order {
-  id          String      @id @default(uuid())
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  status      OrderStatus @default(PENDING)
-  totalAmount Decimal     @default(0.00)
+  id             String       @id @default(uuid())
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
 
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+  tableId String? // Orders can be for a table
+  table   Table?  @relation(fields: [tableId], references: [id])
 
-  serverId String
-  server   User   @relation(fields: [serverId], references: [id])
+  userId String // Server/Cashier who took the order
+  user   User   @relation(fields: [userId], references: [id])
 
-  tableSession TableSession?
+  terminalId String // Which terminal was used
+  terminal   PosTerminal @relation(fields: [terminalId], references: [id])
 
-  customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id])
+  status    OrderStatus @default(OPEN)
+  orderType String      @default("Dine-In") // "Dine-In", "Take-Out", "Delivery"
 
+  items     OrderItem[]
+  movements InventoryMovement[]
+
+  subTotal      Float
+  discountValue Float @default(0) // <-- ADD THIS FIELD
+  tax           Float
+  totalAmount   Float
+
+  paymentMethod String?
+  isPaid        Boolean @default(false)
+
+  // NEW RELATION TO DISCOUNT
   discountId String?
   discount   Discount? @relation(fields: [discountId], references: [id])
 
-  orderItems OrderItem[]
-  payments   Payment[]
-  tips       Tip[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  // New relationship for voided transactions.
-  voidedTransaction VoidedTransaction?
+  @@index([tableId])
+  @@index([userId])
+  @@index([terminalId])
 }
 
-// Model for an individual item within an order.
+enum OrderStatus {
+  OPEN // Order is active at a table, items can be added/removed
+  PREPARING // Order has been sent to the kitchen/bar
+  SERVED // All items have been delivered to the table
+  PAID // Bill has been settled
+  CANCELLED
+}
+
 model OrderItem {
-  id       String  @id @default(uuid())
-  quantity Int
-  price    Decimal // Price at the time of ordering
-  notes    String? // e.g., "extra sauce on the side"
-
-  // New field for KDS status.
-  status OrderItemStatus @default(RECEIVED)
-
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id])
-
+  id         String   @id @default(uuid())
+  orderId    String
+  order      Order    @relation(fields: [orderId], references: [id])
   menuItemId String
   menuItem   MenuItem @relation(fields: [menuItemId], references: [id])
 
-  appliedModifiers AppliedModifier[]
+  quantity    Int
+  priceAtSale Float
+  notes       String? // e.g., "No onions", "Extra spicy"
+
+  @@index([orderId])
+  @@index([menuItemId])
 }
 
-// Model for a modifier that was actually applied to an order item.
-model AppliedModifier {
-  id String @id @default(uuid())
+// --- Supplier and UoM models remain very similar, they are essential ---
+// (PurchaseOrder models also included for completeness)
 
-  orderItemId String
-  orderItem   OrderItem @relation(fields: [orderItemId], references: [id])
-
-  modifierId String
-  modifier   Modifier @relation(fields: [modifierId], references: [id])
+model Supplier {
+  id             String          @id @default(uuid())
+  name           String
+  contactPerson  String?
+  email          String?
+  phone          String?
+  purchaseOrders PurchaseOrder[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
 }
 
-// Model for a payment transaction.
-model Payment {
-  id          String   @id @default(uuid())
-  amount      Decimal
-  method      String // e.g., "Credit Card," "Cash"
-  processedAt DateTime @default(now())
-
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id])
+model PurchaseOrder {
+  id                 String              @id @default(uuid())
+  businessUnitId     String
+  businessUnit       BusinessUnit        @relation(fields: [businessUnitId], references: [id])
+  supplierId         String
+  supplier           Supplier            @relation(fields: [supplierId], references: [id])
+  status             String              @default("PENDING") // PENDING, SUBMITTED, COMPLETED
+  items              PurchaseOrderItem[]
+  inventoryMovements InventoryMovement[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 }
 
-// Model for a discount (e.g., "Happy Hour 15% off").
+model PurchaseOrderItem {
+  id              String        @id @default(uuid())
+  poId            String
+  po              PurchaseOrder @relation(fields: [poId], references: [id])
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantity        Float
+  unitCost        Float
+}
+
+model UoM {
+  id             String          @id @default(uuid())
+  name           String // "Kilogram", "Gram", "Liter", "Piece", "Pack"
+  symbol         String // "kg", "g", "L", "pc", "pk"
+  inventoryItems InventoryItem[]
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+}
+
 model Discount {
-  id    String       @id @default(uuid())
-  name  String
-  type  DiscountType
-  value Decimal // e.g., 0.15 for a percentage, or 5.00 for a fixed amount
+  id          String       @id @default(uuid())
+  name        String // e.g., "Senior Citizen", "Employee Discount"
+  description String?
+  type        DiscountType // PERCENTAGE or FIXED_AMOUNT
+  value       Float // e.g., 20 (for 20%) or 50.00 (for a fixed P50 discount)
+  isActive    Boolean      @default(true)
 
-  orders Order[]
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  orders         Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([businessUnitId])
 }
 
-// Model for tip information.
-model Tip {
-  id            String   @id @default(uuid())
-  amount        Decimal
-  tipPercentage Decimal
-  processedAt   DateTime @default(now())
-
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id])
-}
-
-// Model for inventory items, which now track a base product.
-model InventoryItem {
-  id                String @id @default(uuid())
-  currentStock      Int
-  minStockThreshold Int    @default(10) // Alert when stock drops below this
-
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
-
-  productId String  @unique
-  product   Product @relation(fields: [productId], references: [id])
-}
-
-// --- NEW MODELS ---
-
-// Model for a voided transaction. This tracks a paid order that was later voided.
-// It is different from a `CANCELLED` order, which has not been paid for.
-model VoidedTransaction {
-  id       String   @id @default(uuid())
-  voidedAt DateTime @default(now())
-  reason   String // A description of why the transaction was voided
-
-  orderId String @unique
-  order   Order  @relation(fields: [orderId], references: [id])
-
-  voidedById String
-  voidedBy   User   @relation(fields: [voidedById], references: [id])
-}
-
-// A comprehensive audit log to track changes to critical data.
-model AuditLog {
-  id         String   @id @default(uuid())
-  timestamp  DateTime @default(now())
-  entityName String // e.g., "Order", "MenuItem", "User"
-  entityId   String // The ID of the record that was changed
-  action     String // e.g., "CREATE", "UPDATE", "DELETE"
-  oldData    Json? // The state of the record before the change (serialized to JSON)
-  newData    Json? // The state of the record after the change (serialized to JSON)
-
-  userId String?
-  user   User?   @relation(fields: [userId], references: [id])
-}
-
-// --- NEW MODELS FOR PERSONNEL AND KDS MANAGEMENT ---
-
-// Model to define an employee's work schedule.
-model ScheduleShift {
-  id        String   @id @default(uuid())
-  startTime DateTime
-  endTime   DateTime
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id])
-
-  restaurantId String
-  restaurant   Restaurant @relation(fields: [restaurantId], references: [id])
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
 }

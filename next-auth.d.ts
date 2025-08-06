@@ -1,31 +1,64 @@
-// /next-auth.d.ts
-import { UserRole } from '@prisma/client';
-import NextAuth, { type DefaultSession } from 'next-auth';
-import { JWT } from '@auth/core/jwt';
+// next-auth.d.ts
 
-// Extend the User object in the session
-declare module 'next-auth' {
+import "next-auth";
+import "next-auth/jwt";
+
+// --- HELPER TYPES TO DEFINE THE SESSION SHAPE ---
+
+// The shape of the role object within an assignment
+interface UserRole {
+  id: string;
+  role: string;
+}
+
+// The shape of the business unit object within an assignment
+interface UserBusinessUnit {
+  id: string;
+  name: string;
+}
+
+// The shape of a single assignment object
+interface UserAssignment {
+  businessUnitId: string;
+  businessUnit: UserBusinessUnit;
+  role: UserRole;
+  // You can also include other fields from the join table if needed, like assignedAt
+}
+
+
+// --- MODULE DECLARATIONS FOR NEXT-AUTH ---
+
+declare module "next-auth" {
+  /**
+   * Returned by `auth`, `useSession`, `getSession` and received as a prop on the `SessionProvider` React Context
+   */
   interface Session {
     user: {
-      id: string;
-      role: UserRole;
-      name: string;
-      email: string;
-      employeeId: string;
-    } & DefaultSession['user'];
-  }
-  
-  // If you also need to extend the User object returned by the database
-  interface User {
-    role: UserRole;
-    email: string;
+      id: string 
+      name?: string | null;
+      username?: string | null;
+      image?: string | null;
+      isActive?: boolean;
+      businessUnitId?: string | null; // Optional, can be removed if not needed
+      
+      /** * A user's roles and business unit memberships.
+       * This is an array because a user can be a member of multiple units with different roles.
+       */
+      assignments: UserAssignment[];
+
+      // The old single properties are now gone:
+      // businessUnitId?: string | null; (REMOVED)
+      // role?: string | null; (REMOVED)
+    }
   }
 }
 
-// Extend the token object
-declare module '@auth/core/jwt' {
+declare module "next-auth/jwt" {
+  /** Returned by the `jwt` callback and sent to the `session` callback. */
   interface JWT {
-    role?: UserRole;
-    email?: string;
+    isActive?: boolean;
+    
+    /** A user's roles and business unit memberships. */
+    assignments: UserAssignment[];
   }
 }

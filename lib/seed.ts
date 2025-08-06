@@ -1,394 +1,176 @@
-import { PrismaClient, Role, OrderStatus, TableStatus, DiscountType, OrderItemStatus } from '@prisma/client';
-import { Decimal } from '@prisma/client/runtime/library';
+// prisma/seed.ts (Updated for Schema Change & Large Data Volume)
+
+import { PrismaClient, BusinessUnit, Roles, UoM, MenuItem, User } from '@prisma/client';
+import * as bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
+// Helper function to get a random item from an array
+const getRandomItem = <T>(arr: T[]): T => arr[Math.floor(Math.random() * arr.length)];
+
+// Helper function to generate a random date in the past year
+const getRandomDateInPastYear = (): Date => {
+  const today = new Date();
+  const pastDate = new Date(today);
+  pastDate.setDate(today.getDate() - Math.floor(Math.random() * 365));
+  return pastDate;
+};
+
 async function main() {
-  console.log('Clearing existing data...');
-  // This is a good practice to ensure a clean slate for each run
-  // NOTE: Be careful running this in a production environment!
-  await prisma.auditLog.deleteMany();
-  await prisma.scheduleShift.deleteMany();
-  await prisma.voidedTransaction.deleteMany();
-  await prisma.tip.deleteMany();
-  await prisma.payment.deleteMany();
-  await prisma.appliedModifier.deleteMany();
+  console.log('Start seeding ...');
+
+  // --- 1. CLEAN UP THE DATABASE ---
+  console.log('Cleaning up existing data...');
   await prisma.orderItem.deleteMany();
-  await prisma.discount.deleteMany();
-  await prisma.tableSession.deleteMany();
+  await prisma.recipeItem.deleteMany();
+  await prisma.purchaseOrderItem.deleteMany();
+  await prisma.inventoryMovement.deleteMany();
   await prisma.order.deleteMany();
-  await prisma.table.deleteMany();
-  await prisma.customer.deleteMany();
-  await prisma.inventoryItem.deleteMany();
+  await prisma.recipe.deleteMany();
   await prisma.menuItem.deleteMany();
-  await prisma.modifier.deleteMany();
-  await prisma.modifierGroup.deleteMany();
   await prisma.menuCategory.deleteMany();
-  await prisma.product.deleteMany();
+  await prisma.inventoryStock.deleteMany();
+  await prisma.inventoryItem.deleteMany();
+  await prisma.table.deleteMany();
+  await prisma.posTerminal.deleteMany();
+  await prisma.purchaseOrder.deleteMany();
+  await prisma.discount.deleteMany();
+  await prisma.userBusinessUnit.deleteMany();
   await prisma.user.deleteMany();
-  await prisma.restaurant.deleteMany();
-
-  console.log('Seeding database with production-like data...');
-
-  // --- 1. Create Restaurant and Users ---
-  const restaurant = await prisma.restaurant.create({
-    data: {
-      name: 'Tropicana Flagship Store',
-      address: '123 Main St, Anytown, USA',
-      contactNumber: '555-123-4567',
-    },
-  });
-
-  const managerUser = await prisma.user.create({
-    data: {
-      email: 'manager@tropicana.com',
-      name: 'Jane Manager',
-      role: Role.MANAGER,
-      restaurantId: restaurant.id,
-    },
-  });
-
-  const serverUser = await prisma.user.create({
-    data: {
-      email: 'server@tropicana.com',
-      name: 'John Server',
-      role: Role.SERVER,
-      restaurantId: restaurant.id,
-    },
-  });
-
-  const hostUser = await prisma.user.create({
-    data: {
-      email: 'host@tropicana.com',
-      name: 'Sarah Host',
-      role: Role.HOST,
-      restaurantId: restaurant.id,
-    },
-  });
-
-  console.log('Created restaurant and users.');
-
-  // --- 2. Create Tables ---
-  const tables = await Promise.all(
-    Array.from({ length: 10 }, (_, i) =>
-      prisma.table.create({
-        data: {
-          tableNumber: i + 1,
-          capacity: i < 5 ? 4 : 6,
-          status: TableStatus.OPEN,
-          restaurantId: restaurant.id,
-        },
-      })
-    )
-  );
-  const tableOne = tables[0];
-  const tableTwo = tables[1];
-  const tableThree = tables[2];
-
-  console.log('Created tables.');
-
-  // --- 3. Create Menu Categories, Products, and Menu Items ---
-  const appetizersCategory = await prisma.menuCategory.create({
-    data: {
-      name: 'Appetizers',
-      restaurantId: restaurant.id,
-    },
-  });
-
-  const entreesCategory = await prisma.menuCategory.create({
-    data: {
-      name: 'Entrees',
-      restaurantId: restaurant.id,
-    },
-  });
-
-  const calamariProduct = await prisma.product.create({
-    data: {
-      name: 'Fried Calamari',
-      description: 'Served with spicy marinara sauce.',
-      basePrice: new Decimal(12.50),
-      restaurantId: restaurant.id,
-    },
-  });
-
-  const steakFritesProduct = await prisma.product.create({
-    data: {
-      name: 'Steak Frites',
-      description: '10oz New York Strip steak with truffle fries.',
-      basePrice: new Decimal(25.00),
-      restaurantId: restaurant.id,
-    },
-  });
-
-  const chickenParmProduct = await prisma.product.create({
-    data: {
-      name: 'Chicken Parmesan',
-      description: 'Breaded chicken breast with fresh mozzarella and linguine.',
-      basePrice: new Decimal(18.00),
-      restaurantId: restaurant.id,
-    },
-  });
-
-  const calamariMenuItem = await prisma.menuItem.create({
-    data: {
-      price: new Decimal(12.50),
-      productId: calamariProduct.id,
-      categoryId: appetizersCategory.id,
-    },
-  });
-
-  const steakFritesMenuItem = await prisma.menuItem.create({
-    data: {
-      price: new Decimal(25.00),
-      productId: steakFritesProduct.id,
-      categoryId: entreesCategory.id,
-    },
-  });
+  await prisma.businessUnit.deleteMany();
+  await prisma.roles.deleteMany();
+  await prisma.uoM.deleteMany();
+  await prisma.supplier.deleteMany();
   
-  const chickenParmMenuItem = await prisma.menuItem.create({
-    data: {
-      price: new Decimal(18.00),
-      productId: chickenParmProduct.id,
-      categoryId: entreesCategory.id,
-    },
+  // --- 2. CREATE INDEPENDENT & CORE DATA ---
+  
+  await prisma.roles.createMany({
+    data: [
+      { role: 'Administrator' }, { role: 'Manager' },
+      { role: 'Cashier' }, { role: 'Server' }, { role: 'Kitchen Staff' },
+    ],
   });
+  const roles = await prisma.roles.findMany();
+  console.log(`${roles.length} roles created.`);
 
-  console.log('Created menu items.');
-
-  // --- 4. Create Modifiers and Modifier Groups ---
-  const sauceModifierGroup = await prisma.modifierGroup.create({
-    data: {
-      name: 'Sauces',
-      menuItems: { connect: { id: calamariMenuItem.id } },
-      modifiers: {
-        create: [
-          { name: 'Marinara', priceAdjustment: new Decimal(0.00) },
-          { name: 'Spicy Aioli', priceAdjustment: new Decimal(0.50) },
-        ],
-      },
-    },
+  await prisma.uoM.createMany({
+    data: [{ name: 'Piece', symbol: 'pc' }, { name: 'Gram', symbol: 'g' }],
   });
-  const spicyAioliModifier = await prisma.modifier.findFirst({ where: { name: 'Spicy Aioli' } });
+  const uoms = await prisma.uoM.findMany();
+  console.log(`${uoms.length} UoMs created.`);
+  
+  await prisma.supplier.create({ data: { name: 'General Food Supplies Co.' } });
+  console.log(`Supplier created.`);
 
-  const tempModifierGroup = await prisma.modifierGroup.create({
-    data: {
-      name: 'Cooking Temperature',
-      isForced: true,
-      menuItems: { connect: { id: steakFritesMenuItem.id } },
-      modifiers: {
-        create: [
-          { name: 'Rare', priceAdjustment: new Decimal(0) },
-          { name: 'Medium Rare', priceAdjustment: new Decimal(0) },
-          { name: 'Medium', priceAdjustment: new Decimal(0) },
-          { name: 'Well Done', priceAdjustment: new Decimal(0) },
-        ],
-      },
-    },
+  // --- 3. CREATE BUSINESS UNITS ---
+  const businessUnitNames = [
+    'Dolores Tropicana Resort', 'Dolores Lake Resort',
+    'Anchor Hotel', 'Dolores Farm Resort',
+  ];
+  const businessUnits: BusinessUnit[] = [];
+  for (const name of businessUnitNames) {
+    businessUnits.push(await prisma.businessUnit.create({ data: { name } }));
+  }
+  console.log(`${businessUnits.length} business units created.`);
+  
+  const hashedPassword = await bcrypt.hash('password123', 10);
+
+  // --- 4. CREATE USERS AND ASSIGNMENTS ---
+  const adminRole = roles.find(r => r.role === 'Administrator')!;
+  const superAdmin = await prisma.user.create({
+    data: { name: 'Super Admin', username: 'admin@dolores.com', password: hashedPassword, isActive: true }
   });
-  const rareModifier = await prisma.modifier.findFirst({ where: { name: 'Rare' } });
-
-  console.log('Created modifiers.');
-
-  // --- 5. Create Inventory Items ---
-  await prisma.inventoryItem.create({
-    data: {
-      currentStock: 100,
-      minStockThreshold: 20,
-      restaurantId: restaurant.id,
-      productId: calamariProduct.id,
-    },
-  });
-
-  await prisma.inventoryItem.create({
-    data: {
-      currentStock: 50,
-      minStockThreshold: 10,
-      restaurantId: restaurant.id,
-      productId: steakFritesProduct.id,
-    },
-  });
-
-  console.log('Created inventory.');
-
-  // --- 6. Create a complex order flow ---
-  let loyaltyOrder; // Declare the variable in the outer scope
-  if (tableOne && calamariMenuItem && spicyAioliModifier && steakFritesMenuItem && rareModifier) {
-    const customer = await prisma.customer.create({
-      data: {
-        firstName: 'Loyalty',
-        lastName: 'Customer',
-        email: 'loyalty@example.com',
-      },
+  for (const bu of businessUnits) {
+    await prisma.userBusinessUnit.create({
+      data: { userId: superAdmin.id, businessUnitId: bu.id, roleId: adminRole.id }
     });
+  }
+  console.log(`Super Admin created and assigned to all ${businessUnits.length} units.`);
 
-    // Order for loyalty customer at table one
-    loyaltyOrder = await prisma.order.create({ // Assign to the outer scope variable
-      data: {
-        status: OrderStatus.PENDING,
-        serverId: serverUser.id,
-        restaurantId: restaurant.id,
-        customerId: customer.id,
-        tableSession: { create: { tableId: tableOne.id } },
-        orderItems: {
-          create: [
-            {
-              quantity: 2,
-              price: steakFritesMenuItem.price,
-              menuItemId: steakFritesMenuItem.id,
-              notes: 'No salt on the fries.',
-              appliedModifiers: { create: { modifierId: rareModifier.id } },
-            },
-            {
-              quantity: 1,
-              price: calamariMenuItem.price,
-              menuItemId: calamariMenuItem.id,
-              appliedModifiers: { create: { modifierId: spicyAioliModifier.id } },
-            },
-          ],
-        },
-      },
-      include: {
-        orderItems: {
-          include: {
-            appliedModifiers: true,
-          },
-        },
-      },
-    });
+  // --- 5. CREATE DATA FOR EACH BUSINESS UNIT ---
+  for (const bu of businessUnits) {
+    console.log(`Seeding data for "${bu.name}"...`);
+    
+    // Create Manager and Cashier for this BU
+    const managerRole = roles.find(r => r.role === 'Manager')!;
+    const cashierRole = roles.find(r => r.role === 'Cashier')!;
+    const manager = await prisma.user.create({ data: { name: `${bu.name} Manager`, username: `manager_${bu.id.slice(0, 4)}@dolores.com`, password: hashedPassword, isActive: true } });
+    await prisma.userBusinessUnit.create({ data: { userId: manager.id, businessUnitId: bu.id, roleId: managerRole.id } });
+    const cashier = await prisma.user.create({ data: { name: `${bu.name} Cashier`, username: `cashier_${bu.id.slice(0, 4)}@dolores.com`, password: hashedPassword, isActive: true } });
+    await prisma.userBusinessUnit.create({ data: { userId: cashier.id, businessUnitId: bu.id, roleId: cashierRole.id } });
+    console.log(`  - Created Manager and Cashier.`);
 
-    // Simulate sending to kitchen
-    await prisma.order.update({
-      where: { id: loyaltyOrder.id },
-      data: {
-        status: OrderStatus.SENT_TO_KITCHEN,
-      },
-    });
+    // Create Infrastructure
+    const terminal = await prisma.posTerminal.create({ data: { name: 'Main Counter', businessUnitId: bu.id } });
+    const tables = [];
+    for (let i = 1; i <= 5; i++) {
+        tables.push(await prisma.table.create({ data: { name: `Table ${i}`, businessUnitId: bu.id } }));
+    }
 
-    // Simulate item status updates
-    await prisma.orderItem.update({
-      where: { id: loyaltyOrder.orderItems[0].id },
-      data: { status: OrderItemStatus.PREPARING },
-    });
+    // Create a more diverse menu
+    const pieceUom = uoms.find(u => u.name === 'Piece')!;
+    const mainCoursesCat = await prisma.menuCategory.create({ data: { name: 'Main Courses', businessUnitId: bu.id } });
+    const drinksCat = await prisma.menuCategory.create({ data: { name: 'Drinks', businessUnitId: bu.id } });
+    const sidesCat = await prisma.menuCategory.create({ data: { name: 'Sides', businessUnitId: bu.id } });
 
-    await prisma.orderItem.update({
-      where: { id: loyaltyOrder.orderItems[1].id },
-      data: { status: OrderItemStatus.READY },
-    });
-
-    // Add a discount
-    const happyHourDiscount = await prisma.discount.create({
-      data: {
-        name: 'Happy Hour Discount',
-        type: DiscountType.PERCENTAGE,
-        value: new Decimal(0.15),
-      },
-    });
-
-    const orderWithDiscount = await prisma.order.update({
-      where: { id: loyaltyOrder.id },
-      data: {
-        discountId: happyHourDiscount.id,
-        totalAmount: new Decimal(50.00), // Manually calculate for a clean example
-        status: OrderStatus.CLOSED,
-      },
-    });
-
-    await prisma.payment.create({
-      data: {
-        amount: orderWithDiscount.totalAmount,
-        method: 'Credit Card',
-        orderId: orderWithDiscount.id,
-      },
+    const burgerPatty = await prisma.inventoryItem.create({ data: { name: 'Beef Patty', uomId: pieceUom.id, businessUnitId: bu.id } });
+    const fries = await prisma.inventoryItem.create({ data: { name: 'Fries Portion', uomId: pieceUom.id, businessUnitId: bu.id } });
+    const soda = await prisma.inventoryItem.create({ data: { name: 'Soda Can', uomId: pieceUom.id, businessUnitId: bu.id } });
+    await prisma.inventoryStock.createMany({
+        data: [
+            { inventoryItemId: burgerPatty.id, businessUnitId: bu.id, quantityOnHand: 500 },
+            { inventoryItemId: fries.id, businessUnitId: bu.id, quantityOnHand: 300 },
+            { inventoryItemId: soda.id, businessUnitId: bu.id, quantityOnHand: 1000 },
+        ]
     });
     
-    await prisma.tip.create({
+    // CORRECTED: Added `businessUnitId` to MenuItem creation
+    const burger = await prisma.menuItem.create({ data: { name: 'Classic Burger', price: 250, categoryId: mainCoursesCat.id, businessUnitId: bu.id } });
+    const friesItem = await prisma.menuItem.create({ data: { name: 'French Fries', price: 120, categoryId: sidesCat.id, businessUnitId: bu.id } });
+    const coke = await prisma.menuItem.create({ data: { name: 'Coke', price: 80, categoryId: drinksCat.id, businessUnitId: bu.id } });
+    const menuItemsForBU = [burger, friesItem, coke];
+    console.log(`  - Created menu with ${menuItemsForBU.length} items.`);
+
+    // --- 6. GENERATE A LARGE NUMBER OF RANDOM ORDERS FOR THIS BU ---
+    const orderCount = 30 + Math.floor(Math.random() * 20); // 30-50 orders per BU
+    for (let i = 0; i < orderCount; i++) {
+      const orderItemsToCreate = [];
+      let subTotal = 0;
+      const itemCount = 1 + Math.floor(Math.random() * 3); // 1-3 items per order
+
+      for (let j = 0; j < itemCount; j++) {
+        const randomMenuItem = getRandomItem(menuItemsForBU);
+        orderItemsToCreate.push({
+          menuItemId: randomMenuItem.id,
+          quantity: 1,
+          priceAtSale: randomMenuItem.price,
+        });
+        subTotal += randomMenuItem.price;
+      }
+
+      const tax = subTotal * 0.12;
+      const totalAmount = subTotal + tax;
+
+      await prisma.order.create({
         data: {
-            amount: new Decimal(8.00),
-            tipPercentage: new Decimal(0.16),
-            orderId: orderWithDiscount.id,
+          businessUnitId: bu.id,
+          userId: cashier.id,
+          terminalId: terminal.id,
+          tableId: getRandomItem(tables).id,
+          isPaid: true,
+          status: 'PAID',
+          createdAt: getRandomDateInPastYear(),
+          subTotal,
+          tax,
+          totalAmount,
+          items: { create: orderItemsToCreate }
         }
-    });
-
-    console.log('Created a complete order flow with discounts and payments.');
+      });
+    }
+    console.log(`  - Created ${orderCount} random paid orders.`);
   }
 
-  // --- 7. Create an order that gets voided ---
-  if (tableTwo) {
-    const orderToVoid = await prisma.order.create({
-      data: {
-        status: OrderStatus.CLOSED,
-        serverId: serverUser.id,
-        restaurantId: restaurant.id,
-        totalAmount: new Decimal(45.00),
-        tableSession: { create: { tableId: tableTwo.id } },
-      },
-    });
-
-    await prisma.payment.create({
-      data: {
-        amount: new Decimal(45.00),
-        method: 'Cash',
-        orderId: orderToVoid.id,
-      },
-    });
-
-    await prisma.voidedTransaction.create({
-      data: {
-        reason: 'Customer requested a full refund due to dissatisfaction with service.',
-        orderId: orderToVoid.id,
-        voidedById: managerUser.id,
-      },
-    });
-
-    console.log('Created and voided a sample transaction.');
-  }
-
-  // --- 8. Create a few other sample records ---
-  if (tableThree) {
-    // Another order that's still pending
-    await prisma.order.create({
-      data: {
-        status: OrderStatus.PENDING,
-        serverId: serverUser.id,
-        restaurantId: restaurant.id,
-        tableSession: { create: { tableId: tableThree.id } },
-        orderItems: {
-          create: {
-            quantity: 3,
-            price: chickenParmMenuItem.price,
-            menuItemId: chickenParmMenuItem.id,
-          },
-        },
-      },
-    });
-  }
-  
-  // A schedule shift for the server
-  await prisma.scheduleShift.create({
-    data: {
-      startTime: new Date('2025-08-05T17:00:00Z'),
-      endTime: new Date('2025-08-05T23:00:00Z'),
-      userId: serverUser.id,
-      restaurantId: restaurant.id,
-    },
-  });
-
-  // An audit log for a critical change
-  // Now, loyaltyOrder is accessible here because it was declared in a higher scope.
-  if (loyaltyOrder) {
-    await prisma.auditLog.create({
-      data: {
-        entityName: 'Order',
-        entityId: loyaltyOrder.id,
-        action: 'UPDATE',
-        oldData: { status: OrderStatus.PENDING },
-        newData: { status: OrderStatus.SENT_TO_KITCHEN },
-        userId: serverUser.id,
-      },
-    });
-  }
-
-  console.log('Seeding finished successfully!');
+  console.log('Seeding finished.');
 }
 
 main()
