@@ -73,9 +73,11 @@ export function TableCard({ table, onClick }: TableCardProps) {
           )}
           
           {table.status === 'OCCUPIED' && table.currentOrder && (
-            <div className="flex items-center text-sm text-blue-700 bg-blue-50 rounded-md px-2 py-1 mt-2">
-              <Clock className="h-4 w-4 mr-2" />
-              <span className="font-medium">Order #{table.currentOrder.id.slice(-4)}</span>
+            <div className="space-y-1 mt-2">
+              <div className="flex items-center text-sm text-blue-700 bg-blue-50 rounded-md px-2 py-1">
+                <Clock className="h-4 w-4 mr-2" />
+                <span className="font-medium">Order #{table.currentOrder.id.slice(-4)}</span>
+              </div>
             </div>
           )}
         </div>

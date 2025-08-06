@@ -20,7 +20,8 @@ interface OrderCartProps {
   currentOrder: Order | null;
   onUpdateOrder: (order: Order) => void;
   onSendToKitchen: (orderId: string) => void;
-  onGenerateBill: (orderId: string) => void;
+  onGenerateBill: (paymentDetails: any) => void;
+  onAddItemsClick: () => void; // <-- ADD THIS LINE
 }
 
 const statusConfig = {
@@ -302,11 +303,16 @@ export function OrderCart({ currentOrder, onUpdateOrder, onSendToKitchen, onGene
         
         {/* Sticky Footer for Actions */}
         <div className="p-4 border-t bg-white/80 backdrop-blur-sm sticky bottom-0">
-          {currentOrder.status === 'OPEN' && (
+          {currentOrder.status === 'OPEN' && currentOrder.items.length > 0 && (
             <Button onClick={() => onSendToKitchen(currentOrder.id)} className="w-full h-12 text-base font-bold bg-orange-500 hover:bg-orange-600" size="lg">
               <Send className="h-5 w-5 mr-2" />
               Send to Kitchen
             </Button>
+          )}
+          {currentOrder.status === 'OPEN' && currentOrder.items.length === 0 && (
+            <div className="text-center text-gray-500 py-4">
+              <p className="text-sm">Add items to the order to continue</p>
+            </div>
           )}
           {(currentOrder.status === 'PREPARING' || currentOrder.status === 'SERVED') && (
             <Button onClick={() => setPaymentDialogOpen(true)} className="w-full h-12 text-base font-bold bg-blue-600 hover:bg-blue-700" size="lg">

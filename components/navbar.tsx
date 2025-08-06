@@ -38,7 +38,7 @@ const Navbar = async () => {
 
     return ( 
         <div className="border-b">
-            <div className="flex h-16 items-center px-4">
+            <div className="flex h-16 items-center px-12">
                 {/* --- Group left and center items together --- */}
                 <div className="flex items-center">
                     <BusinessUnitSwitcher items={businessUnits} />
@@ -46,10 +46,10 @@ const Navbar = async () => {
                 </div>
 
                 {/* --- FIX: Changed space-x-4 to space-x-2 --- */}
-                <div className="ml-auto flex items-center space-x-2">
-                   {/*<ThemeToggle />*/} 
-                    <Headerx /> 
-                </div>
+                <div className="ml-auto inline-flex items-center space-x-2">
+  <ThemeToggle />
+  <Headerx />
+</div>
             </div>
         </div>
     );

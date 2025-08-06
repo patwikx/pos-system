@@ -48,16 +48,16 @@ export function MainNav({
   // --- ROUTE DEFINITIONS BY MODULE ---
 
   const posRoutes: Route[] = [
-    { href: `/${params.businessUnitId}`, label: 'Dashboard', icon: Home, active: pathname === `/${params.businessUnitId}`},
-    { href: `/${params.businessUnitId}/orders`, label: 'Orders', icon: ShoppingCart, active: pathname.includes(`/orders`)},
+   ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}`, label: 'Dashboard', icon: Home, active: pathname === `/${params.businessUnitId}`}] : []),
+   ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/orders`, label: 'Orders', icon: ShoppingCart, active: pathname.includes(`/orders`)},] : []),
   ];
 
   const inventoryRoutes: Route[] = [
-    { href: `/${params.businessUnitId}/inventory`, label: 'Inventory Items', icon: Box, active: pathname.includes(`/inventory`)},
-    { href: `/${params.businessUnitId}/stock-requisitions`, label: 'Stock Requisitions', icon: ClipboardPenLine, active: pathname.includes(`/stock-requisitions`)},
-    { href: `/${params.businessUnitId}/purchase-requests`, label: 'Purchase Requests', icon: BookCheck, active: pathname.includes(`/purchase-requests`)},
-    { href: `/${params.businessUnitId}/purchase-orders`, label: 'Purchase Orders', icon: Truck, active: pathname.includes(`/purchase-orders`)},
-    { href: `/${params.businessUnitId}/suppliers`, label: 'Suppliers', icon: Users, active: pathname.includes(`/suppliers`)},
+    ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/inventory`, label: 'Inventory Items', icon: Box, active: pathname.includes(`/inventory`)}, ] : []),
+   ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/stock-requisitions`, label: 'Stock Requisitions', icon: ClipboardPenLine, active: pathname.includes(`/stock-requisitions`)}, ] : []),
+   ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/purchase-requests`, label: 'Purchase Requests', icon: BookCheck, active: pathname.includes(`/purchase-requests`)}, ] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/purchase-orders`, label: 'Purchase Orders', icon: Truck, active: pathname.includes(`/purchase-orders`)}, ] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/suppliers`, label: 'Suppliers', icon: Users, active: pathname.includes(`/suppliers`)},  ] : []),
   ];
   
   const accountingRoutes: Route[] = [
