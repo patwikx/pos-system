@@ -11,26 +11,20 @@ export async function POST(
     if (!session?.user?.id) return new NextResponse("Unauthenticated", { status: 401 });
 
     const body = await req.json();
-    const { name, uomId, description, isActive } = body;
+    const { name } = body;
 
     if (!name) return new NextResponse("Name is required", { status: 400 });
-    if (!uomId) return new NextResponse("Unit of Measure is required", { status: 400 });
 
-    // This now ONLY creates the master inventory item.
-    // Stock levels will be created via stock requisitions, purchase orders, or manual adjustments.
-    const inventoryItem = await prismadb.inventoryItem.create({
+    const modifierGroup = await prismadb.modifierGroup.create({
       data: {
         name,
-        uomId,
-        description,
-        isActive,
-        businessUnitId: params.businessUnitId,
+        businessUnitId: params.businessUnitId
       }
     });
   
-    return NextResponse.json(inventoryItem);
+    return NextResponse.json(modifierGroup);
   } catch (error) {
-    console.log('[INVENTORY_POST]', error);
+    console.log('[MODIFIER_GROUPS_POST]', error);
     return new NextResponse("Internal error", { status: 500 });
   }
 };

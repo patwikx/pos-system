@@ -8,19 +8,28 @@ export type InventoryItemColumn = {
   id: string
   name: string
   uom: string
-  quantityOnHand: number
+  totalQuantityOnHand: number
+  locations: string // A summary of locations, e.g., "Main Storeroom, Kitchen Prep"
   isLowStock: boolean
   createdAt: string
 }
 
 export const columns: ColumnDef<InventoryItemColumn>[] = [
-   { accessorKey: "itemCome", header: "Item Code" },
-  { accessorKey: "name", header: "Item Name" },
-  { accessorKey : "description", header: "Description" },
-  { accessorKey: "uom", header: "Unit of Measure" },
+  { 
+    accessorKey: "name", 
+    header: "Item Name" 
+  },
+  { 
+    accessorKey: "uom", 
+    header: "Unit" 
+  },
   {
-    accessorKey: "quantityOnHand",
-    header: "Quantity on Hand",
+    accessorKey: "totalQuantityOnHand",
+    header: "Total Quantity",
+  },
+  {
+    accessorKey: "locations",
+    header: "Locations",
   },
   {
     accessorKey: "isLowStock",
@@ -31,6 +40,13 @@ export const columns: ColumnDef<InventoryItemColumn>[] = [
       </Badge>
     )
   },
-  { accessorKey: "createdAt", header: "Date Added" },
-  { id: "actions", header: "Actions", cell: ({ row }) => <CellAction data={row.original} /> },
+  { 
+    accessorKey: "createdAt", 
+    header: "Date Added" 
+  },
+  { 
+    id: "actions", 
+    header: "Actions",
+    cell: ({ row }) => <CellAction data={row.original} /> 
+  },
 ];

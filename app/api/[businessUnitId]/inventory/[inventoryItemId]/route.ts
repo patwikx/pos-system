@@ -4,53 +4,33 @@ import prismadb from '@/lib/db';
 
 export async function PATCH(
   req: Request,
-  context: { params: Promise<{ businessUnitId: string; inventoryItemId: string }> }
+  { params }: { params: { businessUnitId: string, inventoryItemId: string } }
 ) {
   try {
-    const { businessUnitId, inventoryItemId } = await context.params;
-
     const session = await auth();
-    if (!session?.user?.id) {
-      return new NextResponse("Unauthenticated", { status: 401 });
-    }
-
-    // TODO: Authorization
+    if (!session?.user?.id) return new NextResponse("Unauthenticated", { status: 401 });
 
     const body = await req.json();
-    const { name, uomId, quantityOnHand, reorderPoint, description, isActive } = body;
+    const { name, uomId, description, isActive } = body;
 
     if (!name) return new NextResponse("Name is required", { status: 400 });
     if (!uomId) return new NextResponse("Unit of Measure is required", { status: 400 });
 
-    // Use a transaction to update both the item and its stock
-    const [, updatedInventoryItem] = await prismadb.$transaction([
-      prismadb.inventoryStock.update({
-        where: { 
-          inventoryItemId_businessUnitId: {
-            inventoryItemId,
-            businessUnitId
-          }
-        },
-        data: {
-          quantityOnHand,
-          reorderPoint,
-        }
-      }),
-      prismadb.inventoryItem.update({
-        where: {
-          id: inventoryItemId,
-          businessUnitId
-        },
-        data: { name, uomId, description, isActive }
-      })
-    ]);
-
+    // This now ONLY updates the master inventory item's details.
+    const updatedInventoryItem = await prismadb.inventoryItem.update({
+      where: {
+        id: params.inventoryItemId,
+        businessUnitId: params.businessUnitId
+      },
+      data: { name, uomId, description, isActive }
+    });
+  
     return NextResponse.json(updatedInventoryItem);
   } catch (error) {
     console.log('[INVENTORY_PATCH]', error);
     return new NextResponse("Internal error", { status: 500 });
   }
-}
+};
 
 export async function DELETE(
   req: Request,

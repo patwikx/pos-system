@@ -1,27 +1,22 @@
 import prismadb from "@/lib/db";
 import { InventoryItemForm } from "./components/inventory-item-form";
 
-export default async function InventoryItemPage({
-  params
-}: {
-  params: Promise<{ inventoryItemId: string; businessUnitId: string }>;
-}) {
-  // ✅ Await params
-  const { inventoryItemId, businessUnitId } = await params;
+interface InventoryItemPageProps {
+  params: { 
+    inventoryItemId: string;
+  }
+}
 
-  // Fetch the specific item to edit, including its stock level
-  const inventoryItem = await prismadb.inventoryItem.findUnique({
-    where: {
-      id: inventoryItemId,
-    },
-    include: {
-      stockLevels: {
-        where: { businessUnitId }
-      }
-    }
-  });
+export default async function InventoryItemPage({ params }: InventoryItemPageProps) {
+  // Fetch only the master item data. Stock levels are no longer needed here.
+  const inventoryItem = params.inventoryItemId === 'new' 
+    ? null 
+    : await prismadb.inventoryItem.findUnique({
+        where: {
+          id: params.inventoryItemId,
+        },
+      });
 
-  // Fetch all Units of Measure for the dropdown
   const uoms = await prismadb.uoM.findMany();
 
   return ( 
