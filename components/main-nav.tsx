@@ -42,8 +42,8 @@ export function MainNav({
   );
   const userRole = currentAssignment?.role.role;
   
-  const hasManagementAccess = userRole === 'Administrator' || userRole === 'Manager';
-  const hasAccountingAccess = userRole === 'Administrator' || userRole === 'Accountant' || userRole === 'Manager';
+  const hasManagementAccess = userRole === 'Administrator' || userRole === 'Manager' || userRole === 'Purchasing';
+  const hasAccountingAccess = userRole === 'Administrator' || userRole === 'Accountant' || userRole === 'Manager' || userRole === 'Purchasing';
 
   // --- ROUTE DEFINITIONS BY MODULE ---
 
@@ -56,7 +56,7 @@ export function MainNav({
     ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/inventory`, label: 'Inventory Items', icon: Box, active: pathname.includes(`/inventory`)}, ] : []),
    ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/stock-requisitions`, label: 'Stock Requisitions', icon: ClipboardPenLine, active: pathname.includes(`/stock-requisitions`)}, ] : []),
    ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/purchase-request`, label: 'Purchase Requests', icon: BookCheck, active: pathname.includes(`/purchase-requests`)}, ] : []),
-    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/purchase-order`, label: 'Purchase Orders', icon: Truck, active: pathname.includes(`/purchase-orders`)}, ] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/purchase-orders`, label: 'Purchase Orders', icon: Truck, active: pathname.includes(`/purchase-orders`)}, ] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/suppliers`, label: 'Suppliers', icon: Users, active: pathname.includes(`/suppliers`)},  ] : []),
   ];
   

@@ -7,27 +7,34 @@ generator client {
   provider = "prisma-client-js"
 }
 
-// --- CORE INFRASTRUCTURE ---
+// --- CORE INFRASTRUCTURE & ADMINISTRATION ---
 
 model User {
-  id                       String             @id @default(uuid())
-  name                     String?
-  username                 String?            @unique
-  password                 String?
-  createdAt                DateTime           @default(now())
-  updatedAt                DateTime           @updatedAt
-  isActive                 Boolean            @default(false)
-  orders                   Order[]
-  assignments              UserBusinessUnit[]
-  shifts                   Shift[]
+  id          String             @id @default(uuid())
+  name        String?
+  username    String?            @unique
+  password    String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  isActive    Boolean            @default(false)
+  assignments UserBusinessUnit[]
+
+  // Document Ownership & Actions
+  ownedSalesQuotations     SalesQuotation[]   @relation("OwnerToSQ")
+  ownedSalesOrders         SalesOrder[]       @relation("OwnerToSO")
+  createdDeliveries        Delivery[]         @relation("CreatorToDelivery")
   createdPurchaseRequests  PurchaseRequest[]  @relation("RequestorToPR")
   approvedPurchaseRequests PurchaseRequest[]  @relation("ApproverToPR")
-  authoredJournalEntries   JournalEntry[]     @relation("AuthoredJournalEntries")
-  approvedJournalEntries   JournalEntry[]     @relation("ApprovedJournalEntries")
+  ownedPurchaseOrders      PurchaseOrder[]    @relation("OwnerToPO")
+  createdReceivings        Receiving[]        @relation("ReceiverToReceiving")
+  authoredJournalEntries   JournalEntry[]     @relation("AuthorToJE")
+  approvedJournalEntries   JournalEntry[]     @relation("ApproverToJE")
   createdRequisitions      StockRequisition[] @relation("UserRequests")
   fulfilledRequisitions    StockRequisition[] @relation("UserFulfills")
   voidedOrderItems         OrderItem[]        @relation("VoidedItems")
   processedPayments        Payment[]
+  shifts                   Shift[]
+  orders                   Order[]
 }
 
 model Roles {
@@ -39,31 +46,42 @@ model Roles {
 }
 
 model BusinessUnit {
-  id                 String              @id @default(uuid())
-  name               String
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  userAssignments    UserBusinessUnit[]
-  tables             Table[]
-  terminals          PosTerminal[]
-  menuCategories     MenuCategory[]
-  menuItems          MenuItem[]
+  id              String             @id @default(uuid())
+  name            String
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  userAssignments UserBusinessUnit[]
+
+  // Module-specific data
+  accounts           GlAccount[]
+  bankAccounts       BankAccount[]
+  businessPartners   BusinessPartner[]
   inventoryItems     InventoryItem[]
-  purchaseOrders     PurchaseOrder[]
-  orders             Order[]
+  inventoryLocations InventoryLocation[]
+  menuItems          MenuItem[]
+  menuCategories     MenuCategory[]
+  modifierGroups     ModifierGroup[]
+  numberingSeries    NumberingSeries[]
+  terminals          PosTerminal[]
+  tables             Table[]
   discounts          Discount[]
+  deposits           Deposit[]
+  incomingPayments   IncomingPayment[]
+  outgoingPayments   OutgoingPayment[]
+  // Documents
+  salesQuotations    SalesQuotation[]
+  salesOrders        SalesOrder[]
+  deliveries         Delivery[]
+  arInvoices         ARInvoice[]
+  purchaseRequests   PurchaseRequest[]
+  purchaseOrders     PurchaseOrder[]
+  receivings         Receiving[]
+  apInvoices         APInvoice[]
+  journalEntries     JournalEntry[]
+  orders             Order[]
   shifts             Shift[]
   reservations       Reservation[]
-  modifierGroups     ModifierGroup[]
-  journalEntries     JournalEntry[]
-  accounts           GlAccount[]
-  purchaseRequests   PurchaseRequest[]
-  vendorBills        VendorBill[]
-  invoices           Invoice[]
-  bankAccounts       BankAccount[]
-  accountingPeriods  AccountingPeriod[]
-  inventoryLocations InventoryLocation[]
-  financialReport    FinancialReport[]
+  financialReports   FinancialReport[]
 }
 
 model UserBusinessUnit {
@@ -78,194 +96,532 @@ model UserBusinessUnit {
   @@id([userId, businessUnitId])
 }
 
-// --- OPERATIONS & INFRASTRUCTURE ---
+// --- DOCUMENT NUMBERING SERIES ---
 
-model PosTerminal {
+enum DocumentType {
+  SALES_QUOTATION
+  SALES_ORDER
+  DELIVERY
+  AR_INVOICE
+  PURCHASE_REQUEST
+  PURCHASE_ORDER
+  GOODS_RECEIPT_PO // Receiving
+  AP_INVOICE
+  JOURNAL_ENTRY
+  INCOMING_PAYMENT
+  OUTGOING_PAYMENT
+}
+
+model NumberingSeries {
   id             String       @id @default(uuid())
   name           String
-  description    String?
-  isActive       Boolean      @default(true)
-  businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  orders         Order[]
-  shifts         Shift[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  @@index([businessUnitId])
-}
-
-model Table {
-  id             String        @id @default(uuid())
-  name           String
-  businessUnitId String
-  businessUnit   BusinessUnit  @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  status         TableStatus   @default(AVAILABLE)
-  orders         Order[]
-  reservations   Reservation[]
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
-}
-
-enum TableStatus {
-  AVAILABLE
-  OCCUPIED
-  RESERVED
-}
-
-model Shift {
-  id             String       @id @default(uuid())
+  prefix         String
+  nextNumber     Int          @default(1)
+  documentType   DocumentType
   businessUnitId String
   businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
-  userId         String
-  user           User         @relation(fields: [userId], references: [id])
-  terminalId     String
-  terminal       PosTerminal  @relation(fields: [terminalId], references: [id])
-  startedAt      DateTime     @default(now())
-  endedAt        DateTime?
-  startingCash   Float
-  endingCash     Float?
-  expectedCash   Float?
-  cashDifference Float?
-  orders         Order[]
-  payments       Payment[]
-  notes          String?
 
-  @@index([userId, terminalId])
+  @@unique([documentType, businessUnitId])
 }
 
-// --- CRM & RESERVATIONS ---
+// --- BUSINESS PARTNERS (CUSTOMERS & VENDORS) ---
+
+enum BusinessPartnerType {
+  CUSTOMER
+  VENDOR
+  LEAD
+}
+
 model BusinessPartner {
-  id            String        @id @default(uuid())
-  name          String
-  phone         String?       @unique
-  email         String?       @unique
-  loyaltyPoints Int           @default(0)
-  orders        Order[]
-  reservations  Reservation[]
-  invoices      Invoice[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id             String              @id @default(uuid())
+  bpCode         String              @unique
+  name           String
+  type           BusinessPartnerType
+  phone          String?
+  email          String?
+  loyaltyPoints  Int                 @default(0)
+  businessUnitId String
+  businessUnit   BusinessUnit        @relation(fields: [businessUnitId], references: [id])
+
+  // Relations to documents
+  salesQuotations  SalesQuotation[]
+  salesOrders      SalesOrder[]
+  deliveries       Delivery[]
+  arInvoices       ARInvoice[]
+  purchaseOrders   PurchaseOrder[]
+  apInvoices       APInvoice[]
+  orders           Order[]
+  reservations     Reservation[]
+  outgoingPayments OutgoingPayment[]
+  incomingPayments IncomingPayment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-model Reservation {
+// --- SALES - A/R (ACCOUNTS RECEIVABLE) ---
+
+enum DocumentStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+model SalesQuotation {
+  id              String          @id @default(uuid())
+  docNum          String          @unique
+  businessUnitId  String
+  businessUnit    BusinessUnit    @relation(fields: [businessUnitId], references: [id])
+  bpCode          String
+  businessPartner BusinessPartner @relation(fields: [bpCode], references: [bpCode])
+  ownerId         String
+  owner           User            @relation("OwnerToSQ", fields: [ownerId], references: [id])
+
+  postingDate  DateTime
+  validUntil   DateTime
+  documentDate DateTime
+  remarks      String?
+
+  totalAmount Float
+  status      DocumentStatus @default(OPEN)
+
+  items      SalesQuotationItem[]
+  salesOrder SalesOrder?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SalesQuotationItem {
+  id          String         @id @default(uuid())
+  docId       String
+  document    SalesQuotation @relation(fields: [docId], references: [id], onDelete: Cascade)
+  itemCode    String
+  menuItem    MenuItem       @relation(fields: [itemCode], references: [id])
+  description String
+  quantity    Float
+  unitPrice   Float
+  lineTotal   Float
+}
+
+model SalesOrder {
+  id              String          @id @default(uuid())
+  docNum          String          @unique
+  baseQuotationId String?         @unique
+  baseQuotation   SalesQuotation? @relation(fields: [baseQuotationId], references: [id])
+  businessUnitId  String
+  businessUnit    BusinessUnit    @relation(fields: [businessUnitId], references: [id])
+  bpCode          String
+  businessPartner BusinessPartner @relation(fields: [bpCode], references: [bpCode])
+  ownerId         String
+  owner           User            @relation("OwnerToSO", fields: [ownerId], references: [id])
+
+  postingDate  DateTime
+  deliveryDate DateTime
+  documentDate DateTime
+  remarks      String?
+
+  totalAmount Float
+  status      DocumentStatus @default(OPEN)
+
+  items      SalesOrderItem[]
+  deliveries Delivery[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model SalesOrderItem {
+  id           String     @id @default(uuid())
+  docId        String
+  document     SalesOrder @relation(fields: [docId], references: [id], onDelete: Cascade)
+  itemCode     String
+  menuItem     MenuItem   @relation(fields: [itemCode], references: [id])
+  description  String
+  quantity     Float
+  unitPrice    Float
+  lineTotal    Float
+  openQuantity Float
+}
+
+model Delivery {
+  id               String          @id @default(uuid())
+  docNum           String          @unique
+  baseSalesOrderId String
+  baseSalesOrder   SalesOrder      @relation(fields: [baseSalesOrderId], references: [id])
+  businessUnitId   String
+  businessUnit     BusinessUnit    @relation(fields: [businessUnitId], references: [id])
+  bpCode           String
+  businessPartner  BusinessPartner @relation(fields: [bpCode], references: [bpCode])
+  createdBy        User            @relation("CreatorToDelivery", fields: [createdById], references: [id])
+  createdById      String
+
+  postingDate  DateTime
+  documentDate DateTime
+  remarks      String?
+
+  status DocumentStatus @default(OPEN)
+
+  items     DeliveryItem[]
+  arInvoice ARInvoice?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DeliveryItem {
+  id          String   @id @default(uuid())
+  docId       String
+  document    Delivery @relation(fields: [docId], references: [id], onDelete: Cascade)
+  itemCode    String
+  menuItem    MenuItem @relation(fields: [itemCode], references: [id])
+  description String
+  quantity    Float
+}
+
+model ARInvoice {
+  id              String          @id @default(uuid())
+  docNum          String          @unique
+  baseDeliveryId  String?         @unique
+  baseDelivery    Delivery?       @relation(fields: [baseDeliveryId], references: [id])
+  businessUnitId  String
+  businessUnit    BusinessUnit    @relation(fields: [businessUnitId], references: [id])
+  bpCode          String
+  businessPartner BusinessPartner @relation(fields: [bpCode], references: [bpCode])
+
+  postingDate  DateTime
+  dueDate      DateTime
+  documentDate DateTime
+  remarks      String?
+
+  totalAmount Float
+  amountPaid  Float          @default(0)
+  status      DocumentStatus @default(OPEN)
+
+  items          ARInvoiceItem[]
+  journalEntryId String?         @unique
+  journalEntry   JournalEntry?   @relation(fields: [journalEntryId], references: [id])
+  orders         Order[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ARInvoiceItem {
+  id          String    @id @default(uuid())
+  docId       String
+  document    ARInvoice @relation(fields: [docId], references: [id], onDelete: Cascade)
+  itemCode    String
+  menuItem    MenuItem  @relation(fields: [itemCode], references: [id])
+  description String
+  quantity    Float
+  unitPrice   Float
+  lineTotal   Float
+  glAccountId String
+  glAccount   GlAccount @relation(fields: [glAccountId], references: [id])
+}
+
+// --- PURCHASING - A/P (ACCOUNTS PAYABLE) ---
+
+model PurchaseRequest {
+  id             String                @id @default(uuid())
+  prNumber       String                @unique
+  businessUnitId String
+  businessUnit   BusinessUnit          @relation(fields: [businessUnitId], references: [id])
+  requestorId    String
+  requestor      User                  @relation("RequestorToPR", fields: [requestorId], references: [id])
+  status         PurchaseRequestStatus @default(PENDING)
+  notes          String?
+  approverId     String?
+  approver       User?                 @relation("ApproverToPR", fields: [approverId], references: [id])
+  approvalDate   DateTime?
+  items          PurchaseRequestItem[]
+  purchaseOrder  PurchaseOrder?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+}
+
+model PurchaseRequestItem {
   id                String          @id @default(uuid())
-  businessPartnerId String
-  businessPartner   BusinessPartner @relation(fields: [businessPartnerId], references: [id])
+  purchaseRequestId String
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  description       String
+  requestedQuantity Float
+  uomId             String?
+  uom               UoM?            @relation(fields: [uomId], references: [id])
+  notes             String?
+}
+
+model PurchaseOrder {
+  id                String          @id @default(uuid())
+  poNumber          String          @unique
+  purchaseRequestId String          @unique
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id])
   businessUnitId    String
   businessUnit      BusinessUnit    @relation(fields: [businessUnitId], references: [id])
-  tableId           String?
-  table             Table?          @relation(fields: [tableId], references: [id])
-  reservationTime   DateTime
-  partySize         Int
-  status            String // e.g., "CONFIRMED", "SEATED", "CANCELLED"
-  notes             String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
+  bpCode            String
+  businessPartner   BusinessPartner @relation(fields: [bpCode], references: [bpCode])
+  ownerId           String
+  owner             User            @relation("OwnerToPO", fields: [ownerId], references: [id])
+
+  postingDate  DateTime
+  deliveryDate DateTime
+  documentDate DateTime
+  remarks      String?
+
+  totalAmount Float
+  status      DocumentStatus @default(OPEN)
+
+  items      PurchaseOrderItem[]
+  receivings Receiving[]
+  apInvoice  APInvoice?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-// --- MENU MANAGEMENT ---
-
-model MenuCategory {
-  id             String       @id @default(uuid())
-  name           String
-  description    String?
-  isActive       Boolean      @default(true)
-  businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  menuItems      MenuItem[]
-  prepStation    String?
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  @@index([businessUnitId])
-}
-
-model MenuItem {
-  id             String          @id @default(uuid())
-  name           String
-  description    String?
-  price          Float
-  imageUrl       String?
-  isActive       Boolean         @default(true)
-  categoryId     String
-  category       MenuCategory    @relation(fields: [categoryId], references: [id])
-  businessUnitId String
-  businessUnit   BusinessUnit    @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  recipe         Recipe?
-  orderItems     OrderItem[]
-  modifierGroups ModifierGroup[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  InvoiceItem    InvoiceItem[]
-
-  @@index([categoryId, businessUnitId])
-}
-
-model ModifierGroup {
-  id             String       @id @default(uuid())
-  name           String // e.g., "Add-Ons", "Sauce Choices"
-  businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  menuItems      MenuItem[]
-  modifiers      Modifier[]
-  createdAt      DateTime     @default(now())
-}
-
-model Modifier {
+model PurchaseOrderItem {
   id              String         @id @default(uuid())
-  name            String // e.g., "Extra Bacon", "No Onions"
-  priceChange     Float          @default(0)
-  modifierGroupId String
-  modifierGroup   ModifierGroup  @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  docId           String
+  document        PurchaseOrder  @relation(fields: [docId], references: [id], onDelete: Cascade)
+  description     String
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
-  quantityUsed    Float?
-  orderItems      OrderItem[]
-  createdAt       DateTime       @default(now())
+  glAccountId     String?
+  glAccount       GlAccount?     @relation(fields: [glAccountId], references: [id])
+  quantity        Float
+  unitPrice       Float
+  lineTotal       Float
+  openQuantity    Float
 }
 
-model Recipe {
-  id          String       @id @default(uuid())
-  menuItemId  String       @unique
-  menuItem    MenuItem     @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
-  recipeItems RecipeItem[]
-  description String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+model Receiving {
+  id                  String        @id @default(uuid())
+  docNum              String        @unique
+  basePurchaseOrderId String
+  basePurchaseOrder   PurchaseOrder @relation(fields: [basePurchaseOrderId], references: [id])
+  businessUnitId      String
+  businessUnit        BusinessUnit  @relation(fields: [businessUnitId], references: [id])
+  receivedById        String
+  receivedBy          User          @relation("ReceiverToReceiving", fields: [receivedById], references: [id])
+
+  postingDate  DateTime
+  documentDate DateTime
+  remarks      String?
+
+  items ReceivingItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-model RecipeItem {
-  id              String        @id @default(uuid())
-  recipeId        String
-  recipe          Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
-  inventoryItemId String
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
-  quantityUsed    Float
-
-  @@index([recipeId, inventoryItemId])
+model ReceivingItem {
+  id                String             @id @default(uuid())
+  docId             String
+  document          Receiving          @relation(fields: [docId], references: [id], onDelete: Cascade)
+  inventoryItemId   String
+  inventoryItem     InventoryItem      @relation(fields: [inventoryItemId], references: [id])
+  quantity          Float
+  expiryDate        DateTime?
+  inventoryMovement InventoryMovement?
 }
 
-// --- INVENTORY & PURCHASING ---
+model APInvoice {
+  id                  String          @id @default(uuid())
+  docNum              String          @unique
+  basePurchaseOrderId String?         @unique
+  basePurchaseOrder   PurchaseOrder?  @relation(fields: [basePurchaseOrderId], references: [id])
+  businessUnitId      String
+  businessUnit        BusinessUnit    @relation(fields: [businessUnitId], references: [id])
+  bpCode              String
+  businessPartner     BusinessPartner @relation(fields: [bpCode], references: [bpCode])
+
+  postingDate  DateTime
+  dueDate      DateTime
+  documentDate DateTime
+  remarks      String?
+
+  totalAmount Float
+  amountPaid  Float          @default(0)
+  status      DocumentStatus @default(OPEN)
+
+  items          APInvoiceItem[]
+  journalEntryId String?         @unique
+  journalEntry   JournalEntry?   @relation(fields: [journalEntryId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model APInvoiceItem {
+  id          String    @id @default(uuid())
+  docId       String
+  document    APInvoice @relation(fields: [docId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Float
+  unitPrice   Float
+  lineTotal   Float
+  glAccountId String
+  glAccount   GlAccount @relation(fields: [glAccountId], references: [id])
+}
+
+// --- BANKING ---
+
+model BankAccount {
+  id               String            @id @default(uuid())
+  name             String
+  bankName         String
+  accountNumber    String
+  glAccountId      String            @unique
+  glAccount        GlAccount         @relation(fields: [glAccountId], references: [id])
+  businessUnitId   String
+  businessUnit     BusinessUnit      @relation(fields: [businessUnitId], references: [id])
+  incomingPayments IncomingPayment[]
+  outgoingPayments OutgoingPayment[]
+  deposits         Deposit[]
+}
+
+model IncomingPayment {
+  id              String          @id @default(uuid())
+  docNum          String          @unique
+  businessUnitId  String
+  businessUnit    BusinessUnit    @relation(fields: [businessUnitId], references: [id])
+  bpCode          String
+  businessPartner BusinessPartner @relation(fields: [bpCode], references: [bpCode])
+
+  paymentDate   DateTime
+  amount        Float
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  journalEntryId String?       @unique
+  journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model OutgoingPayment {
+  id              String          @id @default(uuid())
+  docNum          String          @unique
+  businessUnitId  String
+  businessUnit    BusinessUnit    @relation(fields: [businessUnitId], references: [id])
+  bpCode          String
+  businessPartner BusinessPartner @relation(fields: [bpCode], references: [bpCode])
+
+  paymentDate   DateTime
+  amount        Float
+  bankAccountId String
+  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  journalEntryId String?       @unique
+  journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+model Deposit {
+  id             String       @id @default(uuid())
+  docNum         String       @unique
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  bankAccountId  String
+  bankAccount    BankAccount  @relation(fields: [bankAccountId], references: [id])
+
+  depositDate DateTime
+  amount      Float
+
+  journalEntryId String?       @unique
+  journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id])
+
+  createdAt DateTime @default(now())
+}
+
+// --- FINANCIALS ---
+
+model GlAccount {
+  id             String       @id @default(uuid())
+  accountCode    String       @unique
+  name           String
+  balance        Float        @default(0)
+  accountTypeId  String
+  accountType    AccountType  @relation(fields: [accountTypeId], references: [id])
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
+
+  journalLines       JournalEntryLine[]
+  arInvoiceItems     ARInvoiceItem[]
+  apInvoiceItems     APInvoiceItem[]
+  purchaseOrderItems PurchaseOrderItem[]
+  bankAccount        BankAccount?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AccountType {
+  id       String      @id @default(uuid())
+  name     String      @unique // ASSET, LIABILITY, EQUITY, REVENUE, EXPENSE
+  accounts GlAccount[]
+}
+
+model JournalEntry {
+  id             String       @id @default(uuid())
+  docNum         String       @unique
+  postingDate    DateTime
+  remarks        String?
+  authorId       String
+  author         User         @relation("AuthorToJE", fields: [authorId], references: [id])
+  approverId     String?
+  approver       User?        @relation("ApproverToJE", fields: [approverId], references: [id])
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+
+  lines JournalEntryLine[]
+
+  // Link to the source document that created this entry
+  arInvoice       ARInvoice?
+  apInvoice       APInvoice?
+  incomingPayment IncomingPayment?
+  outgoingPayment OutgoingPayment?
+  deposit         Deposit?
+
+  createdAt DateTime @default(now())
+}
+
+model JournalEntryLine {
+  id             String       @id @default(uuid())
+  journalEntryId String
+  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  glAccountCode  String
+  glAccount      GlAccount    @relation(fields: [glAccountCode], references: [accountCode])
+  debit          Float?
+  credit         Float?
+}
+
+// --- INVENTORY, POS & MENU ---
+
+model InventoryLocation {
+  id               String             @id @default(uuid())
+  name             String
+  businessUnitId   String
+  businessUnit     BusinessUnit       @relation(fields: [businessUnitId], references: [id])
+  stockLevels      InventoryStock[]
+  requisitionsFrom StockRequisition[] @relation("FromRequisitions")
+  requisitionsTo   StockRequisition[] @relation("ToRequisitions")
+}
 
 model InventoryItem {
-  id                    String                 @id @default(uuid())
-  name                  String
-  description           String?
-  isActive              Boolean                @default(true)
-  businessUnitId        String
-  businessUnit          BusinessUnit           @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  uomId                 String
-  uom                   UoM                    @relation(fields: [uomId], references: [id])
-  recipeItems           RecipeItem[]
-  stockLevels           InventoryStock[]
-  poItems               PurchaseOrderItem[]
-  modifiers             Modifier[]
-  purchaseRequestItems  PurchaseRequestItem[]
-  vendorBillItems       VendorBillItem[]
-  stockRequisitionItems StockRequisitionItem[]
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
+  id                String                 @id @default(uuid())
+  name              String
+  description       String?
+  businessUnitId    String
+  businessUnit      BusinessUnit           @relation(fields: [businessUnitId], references: [id])
+  purchaseItems     PurchaseOrderItem[]
+  receivingItems    ReceivingItem[]
+  stockLevels       InventoryStock[]
+  recipeItems       RecipeItem[]
+  modifiers         Modifier[]
+  stockRequisitions StockRequisitionItem[]
 }
 
 model InventoryStock {
@@ -275,14 +631,12 @@ model InventoryStock {
   locationId      String
   location        InventoryLocation   @relation(fields: [locationId], references: [id])
   quantityOnHand  Float
-  reorderPoint    Float               @default(0)
   updatedAt       DateTime            @updatedAt
   movements       InventoryMovement[]
 
   @@unique([inventoryItemId, locationId])
 }
 
-// UPDATE the InventoryMovement model
 model InventoryMovement {
   id                 String            @id @default(uuid())
   inventoryStockId   String
@@ -292,453 +646,21 @@ model InventoryMovement {
   reason             String?
   orderId            String?
   order              Order?            @relation(fields: [orderId], references: [id])
-  purchaseOrderId    String?
-  purchaseOrder      PurchaseOrder?    @relation(fields: [purchaseOrderId], references: [id])
   stockRequisitionId String?
   stockRequisition   StockRequisition? @relation(fields: [stockRequisitionId], references: [id])
+  receivingItemId    String?           @unique
+  receivingItem      ReceivingItem?    @relation(fields: [receivingItemId], references: [id])
   createdAt          DateTime          @default(now())
-
-  @@index([inventoryStockId])
 }
 
-// UPDATE this enum
 enum MovementType {
-  SALE_DEPLETION // This would now apply to KITCHEN stock
-  RECEIVING // From a Purchase Order into the Main Storeroom
-  ADJUSTMENT // For stock counts, spoilage
-  STOCK_TRANSFER_IN // Transferring items INTO a location
-  STOCK_TRANSFER_OUT // Transferring items OUT OF a location
+  SALE_DEPLETION
+  RECEIVING
+  ADJUSTMENT
+  STOCK_TRANSFER_IN
+  STOCK_TRANSFER_OUT
 }
 
-model Supplier {
-  id             String          @id @default(uuid())
-  name           String
-  contactPerson  String?
-  email          String?
-  phone          String?
-  purchaseOrders PurchaseOrder[]
-  vendorBills    VendorBill[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-}
-
-model PurchaseOrder {
-  id                 String              @id @default(uuid())
-  purchaseRequestId  String              @unique
-  purchaseRequest    PurchaseRequest     @relation(fields: [purchaseRequestId], references: [id])
-  businessUnitId     String
-  businessUnit       BusinessUnit        @relation(fields: [businessUnitId], references: [id])
-  supplierId         String
-  supplier           Supplier            @relation(fields: [supplierId], references: [id])
-  status             String              @default("PENDING")
-  items              PurchaseOrderItem[]
-  inventoryMovements InventoryMovement[]
-  vendorBills        VendorBill[]
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-}
-
-model PurchaseOrderItem {
-  id              String        @id @default(uuid())
-  poId            String
-  po              PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
-  inventoryItemId String
-  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
-  quantity        Float
-  unitCost        Float
-}
-
-model UoM {
-  id             String          @id @default(uuid())
-  name           String
-  symbol         String
-  inventoryItems InventoryItem[]
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-}
-
-// --- SALES & ORDERS ---
-
-model Order {
-  id             String              @id @default(uuid())
-  businessUnitId String
-  businessUnit   BusinessUnit        @relation(fields: [businessUnitId], references: [id])
-  tableId        String?
-  table          Table?              @relation(fields: [tableId], references: [id])
-  userId         String
-  user           User                @relation(fields: [userId], references: [id])
-  terminalId     String
-  terminal       PosTerminal         @relation(fields: [terminalId], references: [id])
-  status         OrderStatus         @default(OPEN)
-  orderType      String              @default("Dine-In")
-  items          OrderItem[]
-  movements      InventoryMovement[]
-  subTotal       Float
-  discountValue  Float               @default(0)
-  tax            Float
-  totalAmount    Float
-  // ADD this field to track the total amount paid so far:
-  amountPaid     Float               @default(0)
-
-  // ADD this back-relation:
-  payments          Payment[]
-  isPaid            Boolean          @default(false)
-  discountId        String?
-  discount          Discount?        @relation(fields: [discountId], references: [id])
-  shiftId           String?
-  shift             Shift?           @relation(fields: [shiftId], references: [id])
-  businessPartnerId String?
-  businessPartner   BusinessPartner? @relation(fields: [businessPartnerId], references: [id])
-  invoice           Invoice?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-
-  @@index([tableId, userId, terminalId])
-}
-
-enum OrderStatus {
-  PREPARING
-  SERVED
-  PAID
-  CANCELLED
-  OPEN
-}
-
-model OrderItem {
-  id             String     @id @default(uuid())
-  orderId        String
-  order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  menuItemId     String
-  menuItem       MenuItem   @relation(fields: [menuItemId], references: [id])
-  quantity       Int
-  priceAtSale    Float
-  notes          String?
-  kdsStatus      KdsStatus  @default(PENDING)
-  isVoided       Boolean    @default(false)
-  voidedAt       DateTime?
-  voidedByUserId String? // The User ID of the manager who approved the void
-  voidedByUser   User?      @relation("VoidedItems", fields: [voidedByUserId], references: [id])
-  voidReason     String? // e.g., "Customer changed mind", "Mistake"
-  modifiers      Modifier[]
-
-  @@index([orderId, menuItemId])
-}
-
-model Discount {
-  id             String       @id @default(uuid())
-  name           String
-  description    String?
-  type           DiscountType
-  value          Float
-  isActive       Boolean      @default(true)
-  businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  orders         Order[]
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  @@index([businessUnitId])
-}
-
-enum DiscountType {
-  PERCENTAGE
-  FIXED_AMOUNT
-}
-
-// --- FINANCIALS (Double-Entry Accounting Foundation) ---
-
-model GlAccount {
-  id              String             @id @default(uuid())
-  name            String
-  accountNumber   String?
-  balance         Float              @default(0)
-  accountTypeId   String
-  accountType     AccountType        @relation(fields: [accountTypeId], references: [id])
-  businessUnitId  String
-  businessUnit    BusinessUnit       @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  journalLines    JournalEntryLine[]
-  vendorBillItems VendorBillItem[]
-  billPayments    BillPayment[]
-  invoiceItems    InvoiceItem[]
-  bankAccount     BankAccount?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
-
-  @@unique([name, businessUnitId])
-  @@index([accountTypeId])
-}
-
-model AccountType {
-  id          String  @id @default(uuid())
-  name        String  @unique // e.g., "ASSET", "LIABILITY", "EQUITY", "REVENUE", "EXPENSE"
-  description String? // A short explanation of the type
-
-  accounts GlAccount[] // A type can have many accounts
-}
-
-model VendorBill {
-  id             String       @id @default(uuid())
-  supplierId     String
-  supplier       Supplier     @relation(fields: [supplierId], references: [id])
-  businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
-
-  purchaseOrderId String?        @unique
-  purchaseOrder   PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id])
-
-  billNumber  String // The invoice number from the supplier
-  billDate    DateTime
-  dueDate     DateTime
-  totalAmount Float
-  amountPaid  Float    @default(0)
-  status      String // e.g., "DRAFT", "AWAITING_PAYMENT", "PAID", "VOID"
-
-  items    VendorBillItem[]
-  payments BillPayment[]
-
-  createdAt DateTime @default(now())
-}
-
-model VendorBillItem {
-  id           String     @id @default(uuid())
-  vendorBillId String
-  vendorBill   VendorBill @relation(fields: [vendorBillId], references: [id], onDelete: Cascade)
-
-  inventoryItemId String?
-  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
-
-  description String // e.g., "Beef Patties" or "Monthly Rent"
-  quantity    Float
-  unitCost    Float
-
-  // The expense account this item should be booked to (e.g., "Cost of Goods Sold", "Rent Expense")
-  expenseAccountId String
-  expenseAccount   GlAccount @relation(fields: [expenseAccountId], references: [id])
-}
-
-model BillPayment {
-  id           String     @id @default(uuid())
-  vendorBillId String
-  vendorBill   VendorBill @relation(fields: [vendorBillId], references: [id])
-
-  paymentDate     DateTime
-  amount          Float
-  paymentMethod   String // e.g., "BANK_TRANSFER", "CHECK", "CASH"
-  referenceNumber String?
-
-  // The asset account the payment was made from (e.g., "Operating Bank Account")
-  paymentAccountId String
-  paymentAccount   GlAccount @relation(fields: [paymentAccountId], references: [id])
-  check            Check?
-}
-
-// --- FINANCIALS: ACCOUNTS RECEIVABLE (AR) ---
-
-model Invoice {
-  id                String          @id @default(uuid())
-  businessPartnerId String
-  businessPartner   BusinessPartner @relation(fields: [businessPartnerId], references: [id])
-  businessUnitId    String
-  businessUnit      BusinessUnit    @relation(fields: [businessUnitId], references: [id])
-
-  orderId String? @unique
-  order   Order?  @relation(fields: [orderId], references: [id])
-
-  invoiceNumber String   @unique
-  invoiceDate   DateTime
-  dueDate       DateTime
-  totalAmount   Float
-  amountPaid    Float    @default(0)
-  status        String // e.g., "DRAFT", "SENT", "PAID", "VOID"
-
-  items InvoiceItem[]
-}
-
-model InvoiceItem {
-  id        String  @id @default(uuid())
-  invoiceId String
-  invoice   Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-
-  menuItemId String?
-  menuItem   MenuItem? @relation(fields: [menuItemId], references: [id])
-
-  description String // e.g., "Catering Service for Event X"
-  quantity    Float
-  unitPrice   Float
-
-  // The revenue account this should be booked to (e.g., "Catering Revenue")
-  revenueAccountId String
-  revenueAccount   GlAccount @relation(fields: [revenueAccountId], references: [id])
-}
-
-// --- FINANCIALS: BANKING ---
-
-model BankAccount {
-  id            String @id @default(uuid())
-  name          String // e.g., "BPI Operating Account"
-  bankName      String
-  accountNumber String
-
-  // The corresponding GL Account for this bank (which will be an ASSET type)
-  glAccountId String    @unique
-  glAccount   GlAccount @relation(fields: [glAccountId], references: [id])
-
-  businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
-
-  // For tracking the next check number to be used for this account
-  nextCheckNumber Int?
-  checks          Check[] // A bank account can have many checks written from it
-}
-
-enum JournalEntryStatus {
-  DRAFT // The entry is being created and is not yet submitted for approval.
-  PENDING_APPROVAL // Submitted and waiting for a manager to review.
-  POSTED // Approved and its values are now reflected in the account balances.
-  REJECTED // The entry was rejected and will not be posted.
-  VOID // A previously posted entry that has been reversed.
-}
-
-model JournalEntry {
-  id                 String             @id @default(uuid())
-  date               DateTime
-  description        String
-  status             JournalEntryStatus @default(DRAFT)
-  authorId           String
-  author             User               @relation("AuthoredJournalEntries", fields: [authorId], references: [id])
-  approverId         String?
-  approver           User?              @relation("ApprovedJournalEntries", fields: [approverId], references: [id])
-  approvalDate       DateTime?
-  rejectionReason    String?
-  businessUnitId     String
-  businessUnit       BusinessUnit       @relation(fields: [businessUnitId], references: [id])
-  lines              JournalEntryLine[]
-  accountingPeriodId String
-  accountingPeriod   AccountingPeriod   @relation(fields: [accountingPeriodId], references: [id])
-  createdAt          DateTime           @default(now())
-}
-
-model JournalEntryLine {
-  id             String       @id @default(uuid())
-  journalEntryId String
-  journalEntry   JournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
-  accountId      String
-  account        GlAccount    @relation(fields: [accountId], references: [id])
-  debit          Float?
-  credit         Float?
-
-  @@index([journalEntryId, accountId])
-}
-
-model PurchaseRequest {
-  id              String                @id @default(uuid())
-  prNumber        String                @unique
-  businessUnitId  String
-  businessUnit    BusinessUnit          @relation(fields: [businessUnitId], references: [id])
-  requestorId     String
-  requestor       User                  @relation("RequestorToPR", fields: [requestorId], references: [id])
-  status          PurchaseRequestStatus @default(PENDING)
-  notes           String?
-  approverId      String?
-  approver        User?                 @relation("ApproverToPR", fields: [approverId], references: [id])
-  approvalDate    DateTime?
-  rejectionReason String?
-  items           PurchaseRequestItem[]
-  purchaseOrder   PurchaseOrder?
-  createdAt       DateTime              @default(now())
-  updatedAt       DateTime              @updatedAt
-
-  @@index([requestorId, approverId])
-}
-
-model PurchaseRequestItem {
-  id                String          @id @default(uuid())
-  purchaseRequestId String
-  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
-  inventoryItemId   String
-  inventoryItem     InventoryItem   @relation(fields: [inventoryItemId], references: [id])
-  requestedQuantity Float
-  notes             String?
-}
-
-enum PurchaseRequestStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
-
-model AccountingPeriod {
-  id              String            @id @default(uuid())
-  name            String
-  startDate       DateTime
-  endDate         DateTime
-  status          String // "OPEN", "CLOSED"
-  businessUnitId  String
-  businessUnit    BusinessUnit      @relation(fields: [businessUnitId], references: [id], onDelete: Cascade)
-  journalEntries  JournalEntry[]
-  FinancialReport FinancialReport[]
-
-  @@unique([startDate, endDate, businessUnitId])
-}
-
-enum CheckStatus {
-  TO_BE_PRINTED // The check has been created in the system but not yet printed.
-  PRINTED // The check has been printed and sent.
-  VOIDED // The check was voided and should not be cashed.
-  CLEARED // The check has cleared the bank account.
-}
-
-model Check {
-  id          String @id @default(uuid())
-  checkNumber String // Unique check number for the bank account
-
-  payeeName    String // The name of the supplier or business partner
-  payeeAddress String?
-
-  amount        Float
-  amountInWords String // e.g., "One Thousand Two Hundred Thirty-Four and 56/100"
-
-  date DateTime // The date written on the check
-  memo String? // For tracking invoice numbers, etc.
-
-  status CheckStatus @default(TO_BE_PRINTED)
-
-  bankAccountId String
-  bankAccount   BankAccount @relation(fields: [bankAccountId], references: [id])
-
-  // A check is the instrument for one specific bill payment
-  billPaymentId String      @unique // The @unique enforces a one-to-one relationship
-  billPayment   BillPayment @relation(fields: [billPaymentId], references: [id])
-
-  createdAt DateTime @default(now())
-
-  @@unique([bankAccountId, checkNumber]) // Ensures check numbers are not duplicated for the same bank account
-}
-
-model InventoryLocation {
-  id             String       @id @default(uuid())
-  name           String // e.g., "Main Storeroom", "Hot Kitchen Station", "Bar Well"
-  businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
-
-  stockLevels      InventoryStock[] // A location can hold stock of many items
-  // --- ADD THESE TWO LINES ---
-  requisitionsFrom StockRequisition[] @relation("FromRequisitions")
-  requisitionsTo   StockRequisition[] @relation("ToRequisitions")
-
-  @@unique([name, businessUnitId])
-}
-
-// Add this enum
-enum StockRequisitionStatus {
-  PENDING
-  APPROVED
-  FULFILLED // The items have been physically transferred
-  REJECTED
-}
-
-// Add these new models
-// Update your StockRequisition model
 model StockRequisition {
   id                String                 @id @default(uuid())
   requisitionNumber String                 @unique
@@ -768,60 +690,247 @@ model StockRequisitionItem {
   fulfilledQuantity  Float?
 }
 
-model Payment {
-  id      String @id @default(uuid())
-  orderId String
-  order   Order  @relation(fields: [orderId], references: [id])
-  amount  Float
-
-  // The foreign key linking to the PaymentMethod model
-  paymentMethodId String
-  paymentMethod   PaymentMethod @relation(fields: [paymentMethodId], references: [id])
-
-  paymentDate       DateTime @default(now())
-  referenceNumber   String?
-  processedByUserId String
-  processedByUser   User     @relation(fields: [processedByUserId], references: [id])
-  shiftId           String
-  shift             Shift    @relation(fields: [shiftId], references: [id])
-  createdAt         DateTime @default(now())
+enum StockRequisitionStatus {
+  PENDING
+  APPROVED
+  FULFILLED
+  REJECTED
 }
 
-// CORRECTED: Model name is now PascalCase
-model PaymentMethod {
-  id          String    @id @default(uuid())
-  name        String // e.g., "Cash", "Credit Card", "GCash"
-  description String?
-  isActive    Boolean   @default(true)
-  payments    Payment[] // The back-relation is correct
+model MenuItem {
+  id                  String               @id @default(uuid())
+  name                String
+  price               Float
+  businessUnitId      String
+  businessUnit        BusinessUnit         @relation(fields: [businessUnitId], references: [id])
+  salesQuotationItems SalesQuotationItem[]
+  salesOrderItems     SalesOrderItem[]
+  deliveryItems       DeliveryItem[]
+  arInvoiceItems      ARInvoiceItem[]
+  orderItems          OrderItem[]
+  recipe              Recipe?
+  modifierGroups      ModifierGroup[]
+  categoryId          String
+  category            MenuCategory         @relation(fields: [categoryId], references: [id])
 }
 
-enum KdsStatus {
-  PENDING // Item is in the queue, not yet started.
-  PREPARING // A chef is actively working on the item.
-  READY // The item is finished and ready for pickup by a server.
+model MenuCategory {
+  id             String       @id @default(uuid())
+  name           String
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  menuItems      MenuItem[]
 }
 
-model FinancialReport {
+model ModifierGroup {
+  id             String       @id @default(uuid())
+  name           String
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  menuItems      MenuItem[]
+  modifiers      Modifier[]
+}
+
+model Modifier {
+  id              String         @id @default(uuid())
+  name            String
+  priceChange     Float          @default(0)
+  modifierGroupId String
+  modifierGroup   ModifierGroup  @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
+  inventoryItemId String?
+  inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
+  orderItems      OrderItem[]
+}
+
+model Recipe {
+  id          String       @id @default(uuid())
+  menuItemId  String       @unique
+  menuItem    MenuItem     @relation(fields: [menuItemId], references: [id], onDelete: Cascade)
+  recipeItems RecipeItem[]
+}
+
+model RecipeItem {
+  id              String        @id @default(uuid())
+  recipeId        String
+  recipe          Recipe        @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  inventoryItemId String
+  inventoryItem   InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  quantityUsed    Float
+}
+
+model UoM {
+  id                   String                @id @default(uuid())
+  name                 String
+  symbol               String
+  purchaseRequestItems PurchaseRequestItem[]
+}
+
+enum PurchaseRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// --- POINT OF SALE (POS) ---
+
+model PosTerminal {
+  id             String       @id @default(uuid())
+  name           String
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  orders         Order[]
+  shifts         Shift[]
+}
+
+model Table {
+  id             String        @id @default(uuid())
+  name           String
+  businessUnitId String
+  businessUnit   BusinessUnit  @relation(fields: [businessUnitId], references: [id])
+  status         TableStatus   @default(AVAILABLE)
+  orders         Order[]
+  reservations   Reservation[]
+}
+
+enum TableStatus {
+  AVAILABLE
+  OCCUPIED
+  RESERVED
+}
+
+model Reservation {
+  id                String          @id @default(uuid())
+  businessPartnerId String
+  businessPartner   BusinessPartner @relation(fields: [businessPartnerId], references: [bpCode])
+  businessUnitId    String
+  businessUnit      BusinessUnit    @relation(fields: [businessUnitId], references: [id])
+  tableId           String?
+  table             Table?          @relation(fields: [tableId], references: [id])
+  reservationTime   DateTime
+  partySize         Int
+  status            String
+  notes             String?
+}
+
+model Shift {
   id             String       @id @default(uuid())
   businessUnitId String
   businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  terminalId     String
+  terminal       PosTerminal  @relation(fields: [terminalId], references: [id])
+  startedAt      DateTime     @default(now())
+  endedAt        DateTime?
+  startingCash   Float
+  endingCash     Float?
+  payments       Payment[]
+  orders         Order[]
+}
 
-  name     String // e.g., "Profit & Loss Statement", "Balance Sheet"
-  periodId String // Links to your AccountingPeriod model
-  period   AccountingPeriod @relation(fields: [periodId], references: [id])
+model Order {
+  id                String              @id @default(uuid())
+  businessUnitId    String
+  businessUnit      BusinessUnit        @relation(fields: [businessUnitId], references: [id])
+  tableId           String?
+  table             Table?              @relation(fields: [tableId], references: [id])
+  userId            String
+  user              User                @relation(fields: [userId], references: [id])
+  terminalId        String
+  terminal          PosTerminal         @relation(fields: [terminalId], references: [id])
+  status            OrderStatus         @default(OPEN)
+  items             OrderItem[]
+  movements         InventoryMovement[]
+  totalAmount       Float
+  amountPaid        Float               @default(0)
+  payments          Payment[]
+  isPaid            Boolean             @default(false)
+  discountId        String?
+  discount          Discount?           @relation(fields: [discountId], references: [id])
+  shiftId           String?
+  shift             Shift?              @relation(fields: [shiftId], references: [id])
+  businessPartnerId String?
+  businessPartner   BusinessPartner?    @relation(fields: [businessPartnerId], references: [bpCode])
+  arInvoiceId       String?
+  arInvoice         ARInvoice?          @relation(fields: [arInvoiceId], references: [id])
+  createdAt         DateTime            @default(now())
+}
 
-  generatedAt DateTime @default(now())
+enum OrderStatus {
+  PREPARING
+  SERVED
+  PAID
+  CANCELLED
+  OPEN
+}
 
-  lines FinancialReportLine[]
+model OrderItem {
+  id             String     @id @default(uuid())
+  orderId        String
+  order          Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  menuItemId     String
+  menuItem       MenuItem   @relation(fields: [menuItemId], references: [id])
+  quantity       Int
+  priceAtSale    Float
+  notes          String?
+  isVoided       Boolean    @default(false)
+  voidedByUserId String?
+  voidedByUser   User?      @relation("VoidedItems", fields: [voidedByUserId], references: [id])
+  modifiers      Modifier[]
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  orderId           String
+  order             Order         @relation(fields: [orderId], references: [id])
+  amount            Float
+  paymentMethodId   String
+  paymentMethod     PaymentMethod @relation(fields: [paymentMethodId], references: [id])
+  processedByUserId String
+  processedByUser   User          @relation(fields: [processedByUserId], references: [id])
+  shiftId           String
+  shift             Shift         @relation(fields: [shiftId], references: [id])
+}
+
+model PaymentMethod {
+  id       String    @id @default(uuid())
+  name     String
+  isActive Boolean   @default(true)
+  payments Payment[]
+}
+
+model Discount {
+  id             String       @id @default(uuid())
+  name           String
+  type           DiscountType
+  value          Float
+  isActive       Boolean      @default(true)
+  businessUnitId String
+  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  orders         Order[]
+}
+
+enum DiscountType {
+  PERCENTAGE
+  FIXED_AMOUNT
+}
+
+// --- REPORTING ---
+
+model FinancialReport {
+  id             String                @id @default(uuid())
+  businessUnitId String
+  businessUnit   BusinessUnit          @relation(fields: [businessUnitId], references: [id])
+  name           String
+  generatedAt    DateTime              @default(now())
+  lines          FinancialReportLine[]
 }
 
 model FinancialReportLine {
   id                String          @id @default(uuid())
   financialReportId String
   financialReport   FinancialReport @relation(fields: [financialReportId], references: [id])
-
-  label String // e.g., "Total Sales Revenue", "Net Income"
-  value Float
-  order Int // To maintain the correct order of lines in the report
+  label             String
+  value             Float
+  order             Int
 }

@@ -1,5 +1,6 @@
 // next-auth.d.ts
 
+import { Roles } from "@prisma/client";
 import "next-auth";
 import "next-auth/jwt";
 
@@ -39,6 +40,7 @@ declare module "next-auth" {
       username?: string | null;
       image?: string | null;
       isActive?: boolean;
+      role: Roles;
       businessUnitId?: string | null; // Optional, can be removed if not needed
       
       /** * A user's roles and business unit memberships.
