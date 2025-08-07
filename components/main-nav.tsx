@@ -55,16 +55,16 @@ export function MainNav({
   const inventoryRoutes: Route[] = [
     ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/inventory`, label: 'Inventory Items', icon: Box, active: pathname.includes(`/inventory`)}, ] : []),
    ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/stock-requisitions`, label: 'Stock Requisitions', icon: ClipboardPenLine, active: pathname.includes(`/stock-requisitions`)}, ] : []),
-   ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/purchase-requests`, label: 'Purchase Requests', icon: BookCheck, active: pathname.includes(`/purchase-requests`)}, ] : []),
-    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/purchase-orders`, label: 'Purchase Orders', icon: Truck, active: pathname.includes(`/purchase-orders`)}, ] : []),
+   ...(hasAccountingAccess ? [ { href: `/${params.businessUnitId}/purchase-request`, label: 'Purchase Requests', icon: BookCheck, active: pathname.includes(`/purchase-requests`)}, ] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/purchase-order`, label: 'Purchase Orders', icon: Truck, active: pathname.includes(`/purchase-orders`)}, ] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/suppliers`, label: 'Suppliers', icon: Users, active: pathname.includes(`/suppliers`)},  ] : []),
   ];
   
   const accountingRoutes: Route[] = [
-    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/journal-entries`, label: 'Journal Entries', icon: BookOpen, active: pathname.includes(`/journal-entries`)}] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/journal-entry`, label: 'Journal Entries', icon: BookOpen, active: pathname.includes(`/journal-entry`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/chart-of-accounts`, label: 'Chart of Accounts', icon: Landmark, active: pathname.includes(`/chart-of-accounts`)}] : []),
-    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/vendor-bills`, label: 'Vendor Bills (A/P)', icon: FileText, active: pathname.includes(`/vendor-bills`)}] : []),
-    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/invoices`, label: 'Invoices (A/R)', icon: FileText, active: pathname.includes(`/invoices`)}] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/ap-invoice`, label: 'Vendor Bills (A/P)', icon: FileText, active: pathname.includes(`/ap-invoice`)}] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/ar-invoice`, label: 'Invoices (A/R)', icon: FileText, active: pathname.includes(`/ar-invoice`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/bank-accounts`, label: 'Bank Accounts', icon: Banknote, active: pathname.includes(`/bank-accounts`)}] : []),
     ...(hasManagementAccess ? [{ href: `/${params.businessUnitId}/business-partners`, label: 'Business Partners', icon: Users, active: pathname.includes(`/business-partners`)}] : []),
     ...(hasManagementAccess ? [{ href: `/${params.businessUnitId}/reservations`, label: 'Reservations', icon: CalendarClock, active: pathname.includes(`/reservations`)}] : []),

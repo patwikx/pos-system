@@ -221,3 +221,36 @@ export async function getActiveTableCount(businessUnitId: string) {
     },
   });
 }
+
+export async function getTablesWithActiveOrders(businessUnitId: string) {
+  const tables = await prismadb.table.findMany({
+    where: { businessUnitId,  },
+    include: {
+      orders: {
+        where: { status: { notIn: ['PAID', 'CANCELLED'] } },
+        include: {
+          user: true, // The server assigned to the order
+          items: {
+            include: {
+              menuItem: true,
+              modifiers: true,
+            }
+          }
+        },
+        orderBy: {
+          createdAt: 'desc'
+        }
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+
+  // This maps the data into the shape our UI components will expect.
+  return tables.map(table => {
+    const currentOrder = table.orders[0] || null; // A table has at most one active order
+    return {
+      ...table,
+      currentOrder,
+    };
+  });
+}

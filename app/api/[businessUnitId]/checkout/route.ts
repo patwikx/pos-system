@@ -5,7 +5,6 @@ import prismadb from '@/lib/db';
 // Define the shape of the payment data coming from the form
 interface PaymentData {
     amount: number;
-    paymentMethod: string;
     referenceNumber?: string;
 }
 
@@ -41,9 +40,9 @@ export async function POST(
                 data: {
                     orderId: orderId,
                     amount: payment.amount,
-                    paymentMethod: payment.paymentMethod,
                     referenceNumber: payment.referenceNumber,
                     processedByUserId: session.user!.id,
+                    paymentMethodId: payment.referenceNumber!, // Assuming referenceNumber is used as payment method ID
                     shiftId: order.shiftId!, // Assuming shiftId is always present on an order being paid
                 }
             });
