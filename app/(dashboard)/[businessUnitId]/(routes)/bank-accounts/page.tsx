@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { getBankAccounts } from "@/lib/actions/financials-actions";
 import { BankAccountColumn } from "@/types/financials-types";
 import { formatter } from "@/lib/utils";
-import { BankAccountsClient } from "./bank-accounts-clients";
+import { BankAccountsClient } from "./components/bank-accounts-clients";
 
 export default async function BankAccountsPage() {
   const headersList = await headers();

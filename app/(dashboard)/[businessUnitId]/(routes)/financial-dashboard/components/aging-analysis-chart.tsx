@@ -1,6 +1,6 @@
 "use client";
 
-import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend } from 'recharts';
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip, Legend, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { formatter } from '@/lib/utils';
 
 interface AgingAnalysisChartProps {

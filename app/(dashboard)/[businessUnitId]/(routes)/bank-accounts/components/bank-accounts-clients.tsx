@@ -11,7 +11,7 @@ import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
-import { columns, BankAccountColumn } from "./bank-accounts-columns";
+import { columns, BankAccountColumn } from "../bank-accounts-columns";
 import { formatter } from "@/lib/utils";
 
 interface BankAccountsClientProps {

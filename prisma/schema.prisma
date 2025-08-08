@@ -621,14 +621,19 @@ model InventoryItem {
   id                String                 @id @default(uuid())
   name              String
   description       String?
+  isActive          Boolean                @default(true)
   businessUnitId    String
   businessUnit      BusinessUnit           @relation(fields: [businessUnitId], references: [id])
+  uomId             String
+  uom               UoM                    @relation(fields: [uomId], references: [id])
   purchaseItems     PurchaseOrderItem[]
   receivingItems    ReceivingItem[]
   stockLevels       InventoryStock[]
   recipeItems       RecipeItem[]
   modifiers         Modifier[]
   stockRequisitions StockRequisitionItem[]
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
 }
 
 model InventoryStock {
@@ -638,6 +643,7 @@ model InventoryStock {
   locationId      String
   location        InventoryLocation   @relation(fields: [locationId], references: [id])
   quantityOnHand  Float
+  reorderPoint    Float               @default(0)
   updatedAt       DateTime            @updatedAt
   movements       InventoryMovement[]
 
@@ -707,6 +713,9 @@ enum StockRequisitionStatus {
 model MenuItem {
   id                  String               @id @default(uuid())
   name                String
+  description         String?
+  imageUrl            String?
+  isActive            Boolean              @default(true)
   price               Float
   businessUnitId      String
   businessUnit        BusinessUnit         @relation(fields: [businessUnitId], references: [id])
@@ -719,34 +728,50 @@ model MenuItem {
   modifierGroups      ModifierGroup[]
   categoryId          String
   category            MenuCategory         @relation(fields: [categoryId], references: [id])
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model MenuCategory {
   id             String       @id @default(uuid())
   name           String
+  description    String?
+  isActive       Boolean      @default(true)
+  prepStation    String?
+  imageUrl       String?
+  sortOrder      Int          @default(0)
   businessUnitId String
   businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
   menuItems      MenuItem[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
 
 model ModifierGroup {
   id             String       @id @default(uuid())
   name           String
+  required       Boolean      @default(false)
+  maxSelections  Int          @default(1)
   businessUnitId String
   businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
   menuItems      MenuItem[]
   modifiers      Modifier[]
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 }
 
 model Modifier {
   id              String         @id @default(uuid())
   name            String
   priceChange     Float          @default(0)
+  quantityUsed    Float?
   modifierGroupId String
   modifierGroup   ModifierGroup  @relation(fields: [modifierGroupId], references: [id], onDelete: Cascade)
   inventoryItemId String?
   inventoryItem   InventoryItem? @relation(fields: [inventoryItemId], references: [id])
   orderItems      OrderItem[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 }
 
 model Recipe {
@@ -770,6 +795,9 @@ model UoM {
   name                 String
   symbol               String
   purchaseRequestItems PurchaseRequestItem[]
+  inventoryItems       InventoryItem[]
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 }
 
 enum PurchaseRequestStatus {
@@ -836,31 +864,38 @@ model Shift {
 }
 
 model Order {
-  id                String              @id @default(uuid())
-  businessUnitId    String
-  businessUnit      BusinessUnit        @relation(fields: [businessUnitId], references: [id])
-  tableId           String?
-  table             Table?              @relation(fields: [tableId], references: [id])
-  userId            String
-  user              User                @relation(fields: [userId], references: [id])
-  terminalId        String
-  terminal          PosTerminal         @relation(fields: [terminalId], references: [id])
-  status            OrderStatus         @default(OPEN)
-  items             OrderItem[]
-  movements         InventoryMovement[]
-  totalAmount       Float
-  amountPaid        Float               @default(0)
-  payments          Payment[]
-  isPaid            Boolean             @default(false)
-  discountId        String?
-  discount          Discount?           @relation(fields: [discountId], references: [id])
-  shiftId           String?
-  shift             Shift?              @relation(fields: [shiftId], references: [id])
-  businessPartnerId String?
-  businessPartner   BusinessPartner?    @relation(fields: [businessPartnerId], references: [bpCode])
-  arInvoiceId       String?
-  arInvoice         ARInvoice?          @relation(fields: [arInvoiceId], references: [id])
-  createdAt         DateTime            @default(now())
+  id                      String              @id @default(uuid())
+  businessUnitId          String
+  businessUnit            BusinessUnit        @relation(fields: [businessUnitId], references: [id])
+  tableId                 String?
+  table                   Table?              @relation(fields: [tableId], references: [id])
+  userId                  String
+  user                    User                @relation(fields: [userId], references: [id])
+  terminalId              String
+  terminal                PosTerminal         @relation(fields: [terminalId], references: [id])
+  status                  OrderStatus         @default(OPEN)
+  orderType               String              @default("Dine-In") // Dine-In, Take-Out, Delivery
+  items                   OrderItem[]
+  movements               InventoryMovement[]
+  subTotal                Float               @default(0)
+  discountValue           Float               @default(0)
+  tax                     Float               @default(0)
+  totalAmount             Float
+  amountPaid              Float               @default(0)
+  payments                Payment[]
+  isPaid                  Boolean             @default(false)
+  discountId              String?
+  discount                Discount?           @relation(fields: [discountId], references: [id])
+  shiftId                 String?
+  shift                   Shift?              @relation(fields: [shiftId], references: [id])
+  businessPartnerId       String?
+  businessPartner         BusinessPartner?    @relation(fields: [businessPartnerId], references: [bpCode])
+  arInvoiceId             String?
+  arInvoice               ARInvoice?          @relation(fields: [arInvoiceId], references: [id])
+  specialInstructions     String?
+  estimatedCompletionTime DateTime?
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
 }
 
 enum OrderStatus {
@@ -880,10 +915,15 @@ model OrderItem {
   quantity       Int
   priceAtSale    Float
   notes          String?
+  kdsStatus      String     @default("PENDING") // PENDING, PREPARING, READY, SERVED
   isVoided       Boolean    @default(false)
+  voidedAt       DateTime?
+  voidReason     String?
   voidedByUserId String?
   voidedByUser   User?      @relation("VoidedItems", fields: [voidedByUserId], references: [id])
   modifiers      Modifier[]
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 }
 
 model Payment {

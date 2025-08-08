@@ -18,13 +18,16 @@ import {
   BusinessUnit,
   MenuItem,
   AccountingPeriod,
-  PeriodStatus
+  PeriodStatus,
+  FinancialReport,
+  FinancialReportLine
 } from '@prisma/client';
 
 // --- EXTENDED TYPES WITH RELATIONS ---
 
 export type GlAccountWithDetails = GlAccount & {
   accountType: AccountType;
+  businessUnit: Pick<BusinessUnit, 'id' | 'name'>;
   _count: {
     journalLines: number;
   };
@@ -35,6 +38,7 @@ export type JournalEntryWithDetails = JournalEntry & {
   approver: Pick<User, 'id' | 'name'> | null;
   lines: JournalEntryLineWithAccount[];
   businessUnit: Pick<BusinessUnit, 'id' | 'name'>;
+  accountingPeriod: Pick<AccountingPeriod, 'id' | 'name'> | null;
 };
 
 export type JournalEntryLineWithAccount = JournalEntryLine & {
@@ -46,10 +50,11 @@ export type ARInvoiceWithDetails = ARInvoice & {
   businessUnit: Pick<BusinessUnit, 'id' | 'name'>;
   items: ARInvoiceItemWithDetails[];
   journalEntry: JournalEntry | null;
+  baseDelivery: { id: string; docNum: string } | null;
 };
 
 export type ARInvoiceItemWithDetails = ARInvoiceItem & {
-  menuItem: { id: string; name: string } | null;
+  menuItem: Pick<MenuItem, 'id' | 'name'>;
   glAccount: Pick<GlAccount, 'id' | 'accountCode' | 'name'>;
 };
 
@@ -89,7 +94,7 @@ export type OutgoingPaymentWithDetails = OutgoingPayment & {
 
 export type DepositWithDetails = Deposit & {
   bankAccount: Pick<BankAccount, 'id' | 'name'>;
-  journalEntry: JournalEntry | null;
+  journalEntries: JournalEntry[];
 };
 
 export type AccountingPeriodWithDetails = AccountingPeriod & {
@@ -97,6 +102,11 @@ export type AccountingPeriodWithDetails = AccountingPeriod & {
   _count: {
     journalEntries: number;
   };
+};
+
+export type FinancialReportWithLines = FinancialReport & {
+  lines: FinancialReportLine[];
+  businessUnit: Pick<BusinessUnit, 'id' | 'name'>;
 };
 
 // --- FORM DATA TYPES ---
@@ -123,6 +133,7 @@ export type CreateJournalEntryData = {
   postingDate: Date;
   remarks?: string;
   businessUnitId: string;
+  accountingPeriodId?: string;
   lines: CreateJournalEntryLineData[];
 };
 
@@ -207,6 +218,18 @@ export type CreateAccountingPeriodData = {
   businessUnitId: string;
 };
 
+export type CreateFinancialReportData = {
+  name: string;
+  businessUnitId: string;
+  lines: CreateFinancialReportLineData[];
+};
+
+export type CreateFinancialReportLineData = {
+  label: string;
+  value: number;
+  order: number;
+};
+
 // --- FILTER TYPES ---
 
 export type FinancialFilters = {
@@ -245,6 +268,13 @@ export type AccountingPeriodFilters = {
   businessUnitId: string;
   status?: PeriodStatus;
   year?: number;
+};
+
+export type FinancialReportFilters = {
+  businessUnitId: string;
+  reportType?: 'TRIAL_BALANCE' | 'BALANCE_SHEET' | 'INCOME_STATEMENT' | 'CASH_FLOW';
+  dateFrom?: Date;
+  dateTo?: Date;
 };
 
 // --- DASHBOARD & ANALYTICS TYPES ---
@@ -406,6 +436,13 @@ export type AccountingPeriodColumn = {
   createdAt: string;
 };
 
+export type FinancialReportColumn = {
+  id: string;
+  name: string;
+  generatedAt: string;
+  lineCount: number;
+};
+
 // --- API RESPONSE TYPES ---
 
 export type FinancialApiResponse<T> = {
@@ -478,6 +515,14 @@ export type MenuItemOption = {
   id: string;
   name: string;
   price: number;
+};
+
+export type AccountingPeriodOption = {
+  id: string;
+  name: string;
+  startDate: Date;
+  endDate: Date;
+  status: PeriodStatus;
 };
 
 // --- REPORT CONFIGURATION TYPES ---
@@ -579,4 +624,106 @@ export type BudgetAnalysis = {
   netBudgetedIncome: number;
   netActualIncome: number;
   overallVariance: number;
+};
+
+// --- FINANCIAL DASHBOARD WIDGETS ---
+
+export type DashboardWidget = {
+  id: string;
+  title: string;
+  type: 'KPI' | 'CHART' | 'TABLE' | 'GAUGE';
+  data: any;
+  config: {
+    size: 'small' | 'medium' | 'large';
+    refreshInterval?: number;
+  };
+};
+
+export type KPIWidget = {
+  title: string;
+  value: number;
+  previousValue?: number;
+  target?: number;
+  format: 'currency' | 'percentage' | 'number';
+  trend: 'up' | 'down' | 'neutral';
+  icon: string;
+};
+
+// --- RECONCILIATION TYPES ---
+
+export type BankReconciliationItem = {
+  id: string;
+  date: Date;
+  description: string;
+  amount: number;
+  type: 'DEPOSIT' | 'WITHDRAWAL';
+  isReconciled: boolean;
+  journalEntryId?: string;
+};
+
+export type BankReconciliation = {
+  id: string;
+  bankAccountId: string;
+  periodStart: Date;
+  periodEnd: Date;
+  openingBalance: number;
+  closingBalance: number;
+  statementBalance: number;
+  adjustments: BankReconciliationItem[];
+  isCompleted: boolean;
+};
+
+// --- AUDIT TRAIL TYPES ---
+
+export type FinancialAuditLog = {
+  id: string;
+  entityType: 'JOURNAL_ENTRY' | 'AR_INVOICE' | 'AP_INVOICE' | 'PAYMENT' | 'GL_ACCOUNT';
+  entityId: string;
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'VOID';
+  userId: string;
+  userName: string;
+  timestamp: Date;
+  oldValues?: Record<string, any>;
+  newValues?: Record<string, any>;
+  ipAddress?: string;
+  userAgent?: string;
+};
+
+// --- FINANCIAL CLOSE TYPES ---
+
+export type FinancialCloseChecklist = {
+  id: string;
+  periodId: string;
+  items: FinancialCloseChecklistItem[];
+  completedAt?: Date;
+  completedBy?: string;
+};
+
+export type FinancialCloseChecklistItem = {
+  id: string;
+  description: string;
+  isRequired: boolean;
+  isCompleted: boolean;
+  completedAt?: Date;
+  completedBy?: string;
+  notes?: string;
+};
+
+// --- TAX TYPES ---
+
+export type TaxConfiguration = {
+  id: string;
+  businessUnitId: string;
+  taxType: 'VAT' | 'SALES_TAX' | 'WITHHOLDING';
+  rate: number;
+  glAccountId: string;
+  isActive: boolean;
+};
+
+export type TaxCalculation = {
+  baseAmount: number;
+  taxRate: number;
+  taxAmount: number;
+  totalAmount: number;
+  taxAccountId: string;
 };
