@@ -24,7 +24,7 @@ import { formatter } from "@/lib/utils";
 import { FinancialChart } from "./financial-chart";
 import { TopPartnersTable } from "./top-partners-chart";
 import { AgingAnalysisChart } from "./aging-analysis-chart";
-import { FinancialRatiosCard } from "./financial-ratios-chart";
+import { FinancialRatiosCard } from "./financial-ratios-card";
 import { calculateFinancialRatios } from "@/lib/actions/financials-actions";
 
 
@@ -286,7 +286,15 @@ export function FinancialDashboardClient({ data, businessUnitId }: FinancialDash
           <FinancialRatiosCard ratios={ratios} />
         </div>
       )}
-*/}
+      */}
+      
+      {/* Financial Ratios Card */}
+      {ratios && (
+        <div className="grid gap-4 grid-cols-1">
+          <FinancialRatiosCard ratios={ratios} />
+        </div>
+      )}
+      
       {/* --- CASH FLOW TREND --- */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         <Card>

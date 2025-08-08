@@ -64,6 +64,7 @@ export function MainNav({
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/journal-entry`, label: 'Journal Entries', icon: BookOpen, active: pathname.includes(`/journal-entry`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/chart-of-accounts`, label: 'Chart of Accounts', icon: Landmark, active: pathname.includes(`/chart-of-accounts`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/financial-dashboard`, label: 'Financial Dashboard', icon: BarChart3, active: pathname.includes(`/financial-dashboard`)}] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/bank-reconciliation`, label: 'Bank Reconciliation', icon: Banknote, active: pathname.includes(`/bank-reconciliation`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/ap-invoice`, label: 'Vendor Bills (A/P)', icon: FileText, active: pathname.includes(`/ap-invoice`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/ar-invoice`, label: 'Invoices (A/R)', icon: FileText, active: pathname.includes(`/ar-invoice`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/incoming-payments`, label: 'Customer Payments', icon: HandCoins, active: pathname.includes(`/incoming-payments`)}] : []),

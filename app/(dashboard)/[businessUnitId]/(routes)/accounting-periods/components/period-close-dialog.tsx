@@ -13,6 +13,9 @@ import { AccountingPeriodColumn } from "./columns";
 import { validateAccountingPeriod, closeAccountingPeriod } from "@/lib/actions/financials-actions";
 import { PeriodStatus } from "@prisma/client";
 
+// Add missing import for AccountingPeriodColumn type
+import { AccountingPeriodColumn } from "./columns";
+
 interface PeriodCloseDialogProps {
   period: AccountingPeriodColumn;
   children: React.ReactNode;
