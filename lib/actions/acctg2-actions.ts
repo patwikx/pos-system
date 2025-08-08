@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import prismadb from '@/lib/db';
-import { Prisma, DocumentStatus, AccountType, PeriodStatus, BusinessPartnerType, DocumentType } from '@prisma/client';
+import { Prisma, DocumentStatus, AccountType, PeriodStatus } from '@prisma/client';
 import {
   CreateGlAccountData,
   UpdateGlAccountData,
@@ -18,28 +18,7 @@ import {
   FinancialApiResponse,
   PaginatedFinancialResponse,
   JournalEntryValidation,
-  JournalEntryLineWithAccount,
-  GlAccountOption,
-  CreateARInvoiceData,
-  ARInvoiceWithDetails,
-  ARInvoiceFilters,
-  CreateAPInvoiceData,
-  APInvoiceWithDetails,
-  APInvoiceFilters,
-  CreateBankAccountData,
-  BankAccountWithDetails,
-  CreateIncomingPaymentData,
-  IncomingPaymentWithDetails,
-  CreateOutgoingPaymentData,
-  OutgoingPaymentWithDetails,
-  CreateAccountingPeriodData,
-  AccountingPeriodWithDetails,
-  AccountingPeriodValidation,
-  AgingAnalysis,
-  BalanceSheetData,
-  IncomeStatementData,
-  FinancialRatios,
-  BusinessPartnerOption
+  JournalEntryLineWithAccount
 } from '@/types/financials-types';
 
 // --- AUTHENTICATION HELPER ---
@@ -50,32 +29,6 @@ async function getAuthenticatedUser() {
   }
   return session.user;
 }
-
-// --- DOCUMENT NUMBERING HELPER ---
-async function getNextDocumentNumber(docType: DocumentType, businessUnitId: string): Promise<string> {
-  const series = await prismadb.numberingSeries.findUnique({
-    where: {
-      documentType_businessUnitId: {
-        documentType: docType,
-        businessUnitId
-      }
-    }
-  });
-
-  if (!series) {
-    throw new Error(`Numbering series for ${docType} not found`);
-  }
-
-  const docNum = `${series.prefix}${series.nextNumber}`;
-  
-  await prismadb.numberingSeries.update({
-    where: { id: series.id },
-    data: { nextNumber: { increment: 1 } }
-  });
-
-  return docNum;
-}
-
 
 // --- GL ACCOUNT ACTIONS ---
 
@@ -289,7 +242,20 @@ export async function createJournalEntry(data: CreateJournalEntryData): Promise<
     }
 
     // Get next document number
-    const docNum = await getNextDocumentNumber(DocumentType.JOURNAL_ENTRY, data.businessUnitId);
+    const series = await prismadb.numberingSeries.findUnique({
+      where: {
+        documentType_businessUnitId: {
+          documentType: 'JOURNAL_ENTRY',
+          businessUnitId: data.businessUnitId
+        }
+      }
+    });
+
+    if (!series) {
+      return { success: false, error: 'Numbering series not found for Journal Entries' };
+    }
+
+    const docNum = `${series.prefix}${series.nextNumber}`;
 
     // Get current open accounting period
     const openPeriod = await prismadb.accountingPeriod.findFirst({
@@ -358,6 +324,12 @@ export async function createJournalEntry(data: CreateJournalEntryData): Promise<
           });
         }
       }
+
+      // Update numbering series
+      await tx.numberingSeries.update({
+        where: { id: series.id },
+        data: { nextNumber: { increment: 1 } }
+      });
       
       // Manually add journalEntry to lines to match the return type
       const finalEntry: JournalEntryWithDetails = {
@@ -499,236 +471,166 @@ export async function getJournalEntryById(id: string): Promise<JournalEntryWithD
   }
 }
 
-// --- ACCOUNTS PAYABLE (A/P) ACTIONS ---
+// --- FINANCIAL REPORTS ---
 
-export async function createAPInvoice(data: CreateAPInvoiceData): Promise<FinancialApiResponse<APInvoiceWithDetails>> {
+export async function generateTrialBalance(
+  businessUnitId: string,
+  asOfDate?: Date
+): Promise<TrialBalanceItem[]> {
   try {
-    const user = await getAuthenticatedUser();
-    const docNum = await getNextDocumentNumber(DocumentType.AP_INVOICE, data.businessUnitId);
-
-    const totalAmount = data.items.reduce((sum, item) => sum + item.lineTotal, 0);
-
-    const apInvoice = await prismadb.$transaction(async (tx) => {
-      const invoice = await tx.aPInvoice.create({
-        data: {
-          docNum,
-          businessUnitId: data.businessUnitId,
-          bpCode: data.bpCode,
-          postingDate: data.postingDate,
-          dueDate: data.dueDate,
-          documentDate: data.documentDate,
-          remarks: data.remarks,
-          totalAmount,
-          items: {
-            create: data.items
-          }
-        },
-        include: {
-          businessPartner: { select: { bpCode: true, name: true } },
-          businessUnit: { select: { id: true, name: true } },
-          items: {
-            include: {
-              glAccount: { select: { id: true, accountCode: true, name: true } }
-            }
-          },
-          journalEntry: true,
-          basePurchaseOrder: { select: { id: true, poNumber: true } }
-        }
-      });
-
-      // Create automatic journal entry
-      const apAccount = await tx.glAccount.findFirst({
-        where: { 
-          businessUnitId: data.businessUnitId,
-          accountType: { name: 'LIABILITY' },
-          name: { contains: 'Payable' }
-        }
-      });
-
-      if (apAccount) {
-        const jeDocNum = await getNextDocumentNumber(DocumentType.JOURNAL_ENTRY, data.businessUnitId);
-        
-        const journalEntry = await tx.journalEntry.create({
-          data: {
-            docNum: jeDocNum,
-            postingDate: data.postingDate,
-            remarks: `A/P Invoice ${docNum}`,
-            authorId: user.id,
-            businessUnitId: data.businessUnitId,
-            lines: {
-              create: [
-                ...data.items.map(item => ({
-                  glAccountCode: item.glAccountId,
-                  debit: item.lineTotal
-                })),
-                {
-                  glAccountCode: apAccount.accountCode,
-                  credit: totalAmount
-                }
-              ]
-            }
-          }
-        });
-
-        // Link journal entry to invoice
-        await tx.aPInvoice.update({
-          where: { id: invoice.id },
-          data: { journalEntryId: journalEntry.id }
-        });
-
-        // Update account balances
-        for (const item of data.items) {
-          const account = await tx.glAccount.findUnique({ where: { id: item.glAccountId } });
-          if (account) {
-            await tx.glAccount.update({
-              where: { id: item.glAccountId },
-              data: { balance: { increment: item.lineTotal } }
-            });
-          }
-        }
-
-        await tx.glAccount.update({
-          where: { id: apAccount.id },
-          data: { balance: { increment: totalAmount } }
-        });
-      }
-
-      return invoice;
-    });
-
-    revalidatePath(`/${data.businessUnitId}/ap-invoice`);
-    
-    return {
-      success: true,
-      data: apInvoice,
-      message: `A/P Invoice ${docNum} created successfully`
-    };
-  } catch (error) {
-    console.error('Error creating A/P invoice:', error);
-    return { success: false, error: 'Failed to create A/P invoice' };
-  }
-}
-
-export async function getAPInvoices(
-  filters: APInvoiceFilters,
-  pagination: { page: number; limit: number } = { page: 1, limit: 20 }
-): Promise<PaginatedFinancialResponse<APInvoiceWithDetails>> {
-  try {
-    const where: any = {
-      businessUnitId: filters.businessUnitId,
-    };
-
-    if (filters.status) where.status = filters.status;
-    if (filters.bpCode) where.bpCode = filters.bpCode;
-    if (filters.dateFrom || filters.dateTo) {
-      where.postingDate = {};
-      if (filters.dateFrom) where.postingDate.gte = filters.dateFrom;
-      if (filters.dateTo) where.postingDate.lte = filters.dateTo;
-    }
-
-    if (filters.isPaid !== undefined) {
-      if (filters.isPaid) {
-        where.status = DocumentStatus.CLOSED;
-      } else {
-        where.status = DocumentStatus.OPEN;
-      }
-    }
-
-    if (filters.overdue) {
-      where.dueDate = { lt: new Date() };
-      where.status = DocumentStatus.OPEN;
-    }
-
-    if (filters.searchTerm) {
-      where.OR = [
-        { docNum: { contains: filters.searchTerm, mode: 'insensitive' } },
-        { businessPartner: { name: { contains: filters.searchTerm, mode: 'insensitive' } } },
-        { remarks: { contains: filters.searchTerm, mode: 'insensitive' } }
-      ];
-    }
-
-    const [total, data] = await prismadb.$transaction([
-      prismadb.aPInvoice.count({ where }),
-      prismadb.aPInvoice.findMany({
-        where,
-        include: {
-          businessPartner: { select: { bpCode: true, name: true } },
-          businessUnit: { select: { id: true, name: true } },
-          items: {
-            include: {
-              glAccount: { select: { id: true, accountCode: true, name: true } }
-            }
-          },
-          journalEntry: true,
-          basePurchaseOrder: { select: { id: true, poNumber: true } }
-        },
-        skip: (pagination.page - 1) * pagination.limit,
-        take: pagination.limit,
-        orderBy: { createdAt: 'desc' }
-      })
-    ]);
-
-    return {
-      data,
-      pagination: {
-        ...pagination,
-        total,
-        totalPages: Math.ceil(total / pagination.limit)
-      }
-    };
-  } catch (error) {
-    console.error('Error fetching A/P invoices:', error);
-    return {
-      data: [],
-      pagination: { ...pagination, total: 0, totalPages: 0 }
-    };
-  }
-}
-
-// --- UTILITY FUNCTIONS ---
-
-export async function getBusinessPartners(businessUnitId: string, type?: BusinessPartnerType): Promise<BusinessPartnerOption[]> {
-  try {
-    const where: any = { businessUnitId };
-    if (type) where.type = type;
-
-    return await prismadb.businessPartner.findMany({
-      where,
-      select: { bpCode: true, name: true, type: true },
-      orderBy: { name: 'asc' }
-    });
-  } catch (error) {
-    console.error('Error fetching business partners:', error);
-    return [];
-  }
-}
-
-export async function getAccountsForDropdown(businessUnitId: string, accountTypeName?: string): Promise<GlAccountOption[]> {
-  try {
-    const where: Prisma.GlAccountWhereInput = { businessUnitId };
-    if (accountTypeName) {
-      where.accountType = { name: accountTypeName };
-    }
-
     const accounts = await prismadb.glAccount.findMany({
-      where,
-      select: {
-        id: true,
-        accountCode: true,
-        name: true,
-        accountType: { select: { name: true } }
-      },
+      where: { businessUnitId },
+      include: { accountType: true },
       orderBy: { accountCode: 'asc' }
     });
 
     return accounts.map(account => ({
-      id: account.id,
       accountCode: account.accountCode,
-      name: account.name,
-      accountType: account.accountType.name
+      accountName: account.name,
+      accountType: account.accountType.name,
+      debitBalance: account.balance > 0 && ['ASSET', 'EXPENSE'].includes(account.accountType.name) ? account.balance : 0,
+      creditBalance: account.balance > 0 && ['LIABILITY', 'EQUITY', 'REVENUE'].includes(account.accountType.name) ? account.balance : 0,
     }));
   } catch (error) {
-    console.error('Error fetching accounts for dropdown:', error);
+    console.error('Error generating trial balance:', error);
+    return [];
+  }
+}
+
+export async function generateFinancialReports(businessUnitId: string): Promise<FinancialReportData> {
+  try {
+    const accounts = await prismadb.glAccount.findMany({
+      where: { businessUnitId },
+      include: { accountType: true },
+      orderBy: { accountCode: 'asc' }
+    });
+
+    const assets = accounts
+      .filter(acc => acc.accountType.name === 'ASSET')
+      .map(acc => ({
+        accountCode: acc.accountCode,
+        accountName: acc.name,
+        balance: acc.balance,
+        level: 1,
+        isHeader: false
+      }));
+
+    const liabilities = accounts
+      .filter(acc => acc.accountType.name === 'LIABILITY')
+      .map(acc => ({
+        accountCode: acc.accountCode,
+        accountName: acc.name,
+        balance: acc.balance,
+        level: 1,
+        isHeader: false
+      }));
+
+    const equity = accounts
+      .filter(acc => acc.accountType.name === 'EQUITY')
+      .map(acc => ({
+        accountCode: acc.accountCode,
+        accountName: acc.name,
+        balance: acc.balance,
+        level: 1,
+        isHeader: false
+      }));
+
+    const revenue = accounts
+      .filter(acc => acc.accountType.name === 'REVENUE')
+      .map(acc => ({
+        accountCode: acc.accountCode,
+        accountName: acc.name,
+        amount: acc.balance,
+        level: 1,
+        isHeader: false
+      }));
+
+    const expenses = accounts
+      .filter(acc => acc.accountType.name === 'EXPENSE')
+      .map(acc => ({
+        accountCode: acc.accountCode,
+        accountName: acc.name,
+        amount: acc.balance,
+        level: 1,
+        isHeader: false
+      }));
+
+    const totalAssets = assets.reduce((sum, acc) => sum + acc.balance, 0);
+    const totalLiabilities = liabilities.reduce((sum, acc) => sum + acc.balance, 0);
+    const totalEquity = equity.reduce((sum, acc) => sum + acc.balance, 0);
+    const totalRevenue = revenue.reduce((sum, acc) => sum + acc.amount, 0);
+    const totalExpenses = expenses.reduce((sum, acc) => sum + acc.amount, 0);
+    const netIncome = totalRevenue - totalExpenses;
+
+    return {
+      assets,
+      liabilities,
+      equity,
+      revenue,
+      expenses,
+      totalAssets,
+      totalLiabilities,
+      totalEquity,
+      totalRevenue,
+      totalExpenses,
+      netIncome
+    };
+  } catch (error) {
+    console.error('Error generating financial reports:', error);
+    return {
+      assets: [],
+      liabilities: [],
+      equity: [],
+      revenue: [],
+      expenses: [],
+      totalAssets: 0,
+      totalLiabilities: 0,
+      totalEquity: 0,
+      totalRevenue: 0,
+      totalExpenses: 0,
+      netIncome: 0
+    };
+  }
+}
+
+// --- ACCOUNT BALANCE INQUIRY ---
+
+export async function getAccountBalance(accountCode: string): Promise<number> {
+  try {
+    const account = await prismadb.glAccount.findUnique({
+      where: { accountCode },
+      select: { balance: true }
+    });
+    
+    return account?.balance || 0;
+  } catch (error) {
+    console.error('Error fetching account balance:', error);
+    return 0;
+  }
+}
+
+export async function getAccountTransactions(
+  accountCode: string,
+  limit: number = 50
+): Promise<JournalEntryLineWithAccount[]> {
+  try {
+    return await prismadb.journalEntryLine.findMany({
+      where: { glAccountCode: accountCode },
+      include: {
+        glAccount: true,
+        journalEntry: {
+          select: {
+            id: true,
+            docNum: true,
+            postingDate: true,
+          }
+        }
+      },
+      orderBy: { journalEntry: { postingDate: 'desc' } },
+      take: limit
+    });
+  } catch (error) {
+    console.error('Error fetching account transactions:', error);
     return [];
   }
 }

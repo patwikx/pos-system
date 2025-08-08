@@ -20,7 +20,10 @@ import {
   AccountingPeriod,
   PeriodStatus,
   FinancialReport,
-  FinancialReportLine
+  FinancialReportLine,
+  NumberingSeries,
+  DocumentType,
+  Order
 } from '@prisma/client';
 
 // --- EXTENDED TYPES WITH RELATIONS ---
@@ -43,6 +46,7 @@ export type JournalEntryWithDetails = JournalEntry & {
 
 export type JournalEntryLineWithAccount = JournalEntryLine & {
   glAccount: GlAccount;
+  journalEntry: Pick<JournalEntry, 'id' | 'docNum' | 'postingDate'>;
 };
 
 export type ARInvoiceWithDetails = ARInvoice & {
@@ -51,10 +55,11 @@ export type ARInvoiceWithDetails = ARInvoice & {
   items: ARInvoiceItemWithDetails[];
   journalEntry: JournalEntry | null;
   baseDelivery: { id: string; docNum: string } | null;
+  orders: Pick<Order, 'id' | 'totalAmount'>[];
 };
 
 export type ARInvoiceItemWithDetails = ARInvoiceItem & {
-  menuItem: Pick<MenuItem, 'id' | 'name'>;
+  menuItem: Pick<MenuItem, 'id' | 'name'> | null;
   glAccount: Pick<GlAccount, 'id' | 'accountCode' | 'name'>;
 };
 
@@ -104,8 +109,7 @@ export type AccountingPeriodWithDetails = AccountingPeriod & {
   };
 };
 
-export type FinancialReportWithLines = FinancialReport & {
-  lines: FinancialReportLine[];
+export type NumberingSeriesWithDetails = NumberingSeries & {
   businessUnit: Pick<BusinessUnit, 'id' | 'name'>;
 };
 
@@ -135,6 +139,10 @@ export type CreateJournalEntryData = {
   businessUnitId: string;
   accountingPeriodId?: string;
   lines: CreateJournalEntryLineData[];
+};
+
+export type UpdateJournalEntryData = CreateJournalEntryData & {
+  id: string;
 };
 
 export type CreateARInvoiceData = {
@@ -218,18 +226,6 @@ export type CreateAccountingPeriodData = {
   businessUnitId: string;
 };
 
-export type CreateFinancialReportData = {
-  name: string;
-  businessUnitId: string;
-  lines: CreateFinancialReportLineData[];
-};
-
-export type CreateFinancialReportLineData = {
-  label: string;
-  value: number;
-  order: number;
-};
-
 // --- FILTER TYPES ---
 
 export type FinancialFilters = {
@@ -270,79 +266,6 @@ export type AccountingPeriodFilters = {
   year?: number;
 };
 
-export type FinancialReportFilters = {
-  businessUnitId: string;
-  reportType?: 'TRIAL_BALANCE' | 'BALANCE_SHEET' | 'INCOME_STATEMENT' | 'CASH_FLOW';
-  dateFrom?: Date;
-  dateTo?: Date;
-};
-
-// --- DASHBOARD & ANALYTICS TYPES ---
-
-export type FinancialDashboardData = {
-  totalRevenue: number;
-  totalExpenses: number;
-  netIncome: number;
-  totalAssets: number;
-  totalLiabilities: number;
-  totalEquity: number;
-  cashFlow: number;
-  accountsReceivable: number;
-  accountsPayable: number;
-  monthlyRevenue: { month: string; amount: number }[];
-  monthlyExpenses: { month: string; amount: number }[];
-  topCustomers: { name: string; amount: number }[];
-  topVendors: { name: string; amount: number }[];
-  agingReceivables: { period: string; amount: number }[];
-  agingPayables: { period: string; amount: number }[];
-  cashFlowTrend: { month: string; inflow: number; outflow: number; net: number }[];
-  profitMarginTrend: { month: string; margin: number }[];
-};
-
-export type TrialBalanceItem = {
-  accountCode: string;
-  accountName: string;
-  accountType: string;
-  debitBalance: number;
-  creditBalance: number;
-};
-
-export type BalanceSheetData = {
-  assets: {
-    current: { accountCode: string; name: string; amount: number }[];
-    nonCurrent: { accountCode: string; name: string; amount: number }[];
-    totalAssets: number;
-  };
-  liabilities: {
-    current: { accountCode: string; name: string; amount: number }[];
-    nonCurrent: { accountCode: string; name: string; amount: number }[];
-    totalLiabilities: number;
-  };
-  equity: {
-    accounts: { accountCode: string; name: string; amount: number }[];
-    retainedEarnings: number;
-    totalEquity: number;
-  };
-};
-
-export type IncomeStatementData = {
-  revenue: { accountCode: string; name: string; amount: number }[];
-  expenses: { accountCode: string; name: string; amount: number }[];
-  totalRevenue: number;
-  totalExpenses: number;
-  grossProfit: number;
-  netIncome: number;
-};
-
-export type CashFlowData = {
-  operating: { description: string; amount: number }[];
-  investing: { description: string; amount: number }[];
-  financing: { description: string; amount: number }[];
-  netCashFlow: number;
-  beginningCash: number;
-  endingCash: number;
-};
-
 // --- COLUMN TYPES FOR DATA TABLES ---
 
 export type GlAccountColumn = {
@@ -363,7 +286,7 @@ export type JournalEntryColumn = {
   remarks: string;
   totalDebit: string;
   totalCredit: string;
-  status: string;
+  status: DocumentStatus;
   createdAt: string;
 };
 
@@ -436,55 +359,7 @@ export type AccountingPeriodColumn = {
   createdAt: string;
 };
 
-export type FinancialReportColumn = {
-  id: string;
-  name: string;
-  generatedAt: string;
-  lineCount: number;
-};
-
-// --- API RESPONSE TYPES ---
-
-export type FinancialApiResponse<T> = {
-  success: boolean;
-  data?: T;
-  error?: string;
-  message?: string;
-};
-
-export type PaginatedFinancialResponse<T> = {
-  data: T[];
-  pagination: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
-};
-
-// --- VALIDATION TYPES ---
-
-export type JournalEntryValidation = {
-  isBalanced: boolean;
-  totalDebits: number;
-  totalCredits: number;
-  errors: string[];
-  warnings: string[];
-};
-
-export type AccountingPeriodValidation = {
-  isValid: boolean;
-  canClose: boolean;
-  errors: string[];
-  warnings: string[];
-};
-
 // --- UTILITY TYPES ---
-
-export type AccountTypeOption = {
-  id: string;
-  name: string;
-};
 
 export type BusinessPartnerOption = {
   bpCode: string;
@@ -525,22 +400,70 @@ export type AccountingPeriodOption = {
   status: PeriodStatus;
 };
 
-// --- REPORT CONFIGURATION TYPES ---
+// --- DASHBOARD & ANALYTICS TYPES ---
 
-export type ReportPeriod = {
-  startDate: Date;
-  endDate: Date;
-  label: string;
+export type FinancialDashboardData = {
+  totalRevenue: number;
+  totalExpenses: number;
+  netIncome: number;
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  cashFlow: number;
+  accountsReceivable: number;
+  accountsPayable: number;
+  monthlyRevenue: { month: string; amount: number }[];
+  monthlyExpenses: { month: string; amount: number }[];
+  topCustomers: { name: string; amount: number }[];
+  topVendors: { name: string; amount: number }[];
+  agingReceivables: { period: string; amount: number }[];
+  agingPayables: { period: string; amount: number }[];
+  cashFlowTrend: { month: string; inflow: number; outflow: number; net: number }[];
+  profitMarginTrend: { month: string; margin: number }[];
 };
 
-export type ReportFormat = 'PDF' | 'EXCEL' | 'CSV';
+export type TrialBalanceItem = {
+  accountCode: string;
+  accountName: string;
+  accountType: string;
+  debitBalance: number;
+  creditBalance: number;
+};
 
-export type ReportConfig = {
-  period: ReportPeriod;
-  format: ReportFormat;
-  includeZeroBalances: boolean;
-  groupByAccountType: boolean;
-  showComparativePeriod: boolean;
+export type BalanceSheetData = {
+  assets: {
+    current: { accountCode: string; name: string; amount: number }[];
+    nonCurrent: { accountCode: string; name: string; amount: number }[];
+    totalAssets: number;
+  };
+  liabilities: {
+    current: { accountCode: string; name: string; amount: number }[];
+    nonCurrent: { accountCode: string; name: string; amount: number }[];
+    totalLiabilities: number;
+  };
+  equity: {
+    accounts: { accountCode: string; name: string; amount: number }[];
+    retainedEarnings: number;
+    totalEquity: number;
+  };
+};
+
+export type IncomeStatementData = {
+  revenue: { accountCode: string; name: string; amount: number }[];
+  expenses: { accountCode: string; name: string; amount: number }[];
+  totalRevenue: number;
+  totalExpenses: number;
+  grossProfit: number;
+  netIncome: number;
+};
+
+export type CashFlowData = {
+  operating: { description: string; amount: number }[];
+  investing: { description: string; amount: number }[];
+  financing: { description: string; amount: number }[];
+  netCashFlow: number;
+  beginningCash: number;
+  endingCash: number;
 };
 
 // --- AGING ANALYSIS TYPES ---
@@ -557,23 +480,6 @@ export type AgingAnalysis = {
   totalAmount: number;
   totalCount: number;
   averageDaysOutstanding: number;
-};
-
-// --- CASH FLOW TYPES ---
-
-export type CashFlowCategory = {
-  name: string;
-  items: { description: string; amount: number }[];
-  total: number;
-};
-
-export type CashFlowStatement = {
-  operating: CashFlowCategory;
-  investing: CashFlowCategory;
-  financing: CashFlowCategory;
-  netCashFlow: number;
-  beginningCash: number;
-  endingCash: number;
 };
 
 // --- FINANCIAL RATIOS ---
@@ -603,50 +509,60 @@ export type FinancialRatios = {
   };
 };
 
-// --- BUDGET & FORECAST TYPES ---
+// --- API RESPONSE TYPES ---
 
-export type BudgetItem = {
-  accountCode: string;
-  accountName: string;
-  budgetedAmount: number;
-  actualAmount: number;
-  variance: number;
-  variancePercentage: number;
+export type FinancialApiResponse<T> = {
+  success: boolean;
+  data?: T;
+  error?: string;
+  message?: string;
 };
 
-export type BudgetAnalysis = {
-  revenue: BudgetItem[];
-  expenses: BudgetItem[];
-  totalBudgetedRevenue: number;
-  totalActualRevenue: number;
-  totalBudgetedExpenses: number;
-  totalActualExpenses: number;
-  netBudgetedIncome: number;
-  netActualIncome: number;
-  overallVariance: number;
-};
-
-// --- FINANCIAL DASHBOARD WIDGETS ---
-
-export type DashboardWidget = {
-  id: string;
-  title: string;
-  type: 'KPI' | 'CHART' | 'TABLE' | 'GAUGE';
-  data: any;
-  config: {
-    size: 'small' | 'medium' | 'large';
-    refreshInterval?: number;
+export type PaginatedFinancialResponse<T> = {
+  data: T[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
   };
 };
 
-export type KPIWidget = {
-  title: string;
-  value: number;
-  previousValue?: number;
-  target?: number;
-  format: 'currency' | 'percentage' | 'number';
-  trend: 'up' | 'down' | 'neutral';
-  icon: string;
+// --- VALIDATION TYPES ---
+
+export type JournalEntryValidation = {
+  isBalanced: boolean;
+  totalDebits: number;
+  totalCredits: number;
+  errors: string[];
+  warnings: string[];
+};
+
+export type AccountingPeriodValidation = {
+  isValid: boolean;
+  canClose: boolean;
+  errors: string[];
+  warnings: string[];
+};
+
+// --- FINANCIAL CLOSE TYPES ---
+
+export type FinancialCloseChecklist = {
+  id: string;
+  periodId: string;
+  items: FinancialCloseChecklistItem[];
+  completedAt?: Date;
+  completedBy?: string;
+};
+
+export type FinancialCloseChecklistItem = {
+  id: string;
+  description: string;
+  isRequired: boolean;
+  isCompleted: boolean;
+  completedAt?: Date;
+  completedBy?: string;
+  notes?: string;
 };
 
 // --- RECONCILIATION TYPES ---
@@ -673,13 +589,41 @@ export type BankReconciliation = {
   isCompleted: boolean;
 };
 
+// --- DOCUMENT NUMBERING TYPES ---
+
+export type DocumentNumberingConfig = {
+  documentType: DocumentType;
+  prefix: string;
+  nextNumber: number;
+  businessUnitId: string;
+};
+
+// --- IMPORT/EXPORT TYPES ---
+
+export type ImportValidationResult = {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+  validRows: number;
+  totalRows: number;
+};
+
+export type ExportConfig = {
+  format: 'PDF' | 'EXCEL' | 'CSV';
+  includeDetails: boolean;
+  dateRange?: {
+    startDate: Date;
+    endDate: Date;
+  };
+};
+
 // --- AUDIT TRAIL TYPES ---
 
 export type FinancialAuditLog = {
   id: string;
   entityType: 'JOURNAL_ENTRY' | 'AR_INVOICE' | 'AP_INVOICE' | 'PAYMENT' | 'GL_ACCOUNT';
   entityId: string;
-  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'VOID';
+  action: 'CREATE' | 'UPDATE' | 'DELETE' | 'APPROVE' | 'VOID' | 'POST';
   userId: string;
   userName: string;
   timestamp: Date;
@@ -689,24 +633,27 @@ export type FinancialAuditLog = {
   userAgent?: string;
 };
 
-// --- FINANCIAL CLOSE TYPES ---
+// --- BUDGET & FORECAST TYPES ---
 
-export type FinancialCloseChecklist = {
-  id: string;
-  periodId: string;
-  items: FinancialCloseChecklistItem[];
-  completedAt?: Date;
-  completedBy?: string;
+export type BudgetItem = {
+  accountCode: string;
+  accountName: string;
+  budgetedAmount: number;
+  actualAmount: number;
+  variance: number;
+  variancePercentage: number;
 };
 
-export type FinancialCloseChecklistItem = {
-  id: string;
-  description: string;
-  isRequired: boolean;
-  isCompleted: boolean;
-  completedAt?: Date;
-  completedBy?: string;
-  notes?: string;
+export type BudgetAnalysis = {
+  revenue: BudgetItem[];
+  expenses: BudgetItem[];
+  totalBudgetedRevenue: number;
+  totalActualRevenue: number;
+  totalBudgetedExpenses: number;
+  totalActualExpenses: number;
+  netBudgetedIncome: number;
+  netActualIncome: number;
+  overallVariance: number;
 };
 
 // --- TAX TYPES ---
@@ -726,4 +673,140 @@ export type TaxCalculation = {
   taxAmount: number;
   totalAmount: number;
   taxAccountId: string;
+};
+
+// --- FINANCIAL REPORT TYPES ---
+
+export type FinancialReportData = {
+  assets: BalanceSheetItem[];
+  liabilities: BalanceSheetItem[];
+  equity: BalanceSheetItem[];
+  revenue: IncomeStatementItem[];
+  expenses: IncomeStatementItem[];
+  totalAssets: number;
+  totalLiabilities: number;
+  totalEquity: number;
+  totalRevenue: number;
+  totalExpenses: number;
+  netIncome: number;
+};
+
+export type BalanceSheetItem = {
+  accountCode: string;
+  accountName: string;
+  balance: number;
+  level: number;
+  isHeader: boolean;
+};
+
+export type IncomeStatementItem = {
+  accountCode: string;
+  accountName: string;
+  amount: number;
+  level: number;
+  isHeader: boolean;
+};
+
+// --- CASH FLOW STATEMENT TYPES ---
+
+export type CashFlowStatement = {
+  operating: CashFlowCategory;
+  investing: CashFlowCategory;
+  financing: CashFlowCategory;
+  netCashFlow: number;
+  beginningCash: number;
+  endingCash: number;
+};
+
+export type CashFlowCategory = {
+  name: string;
+  items: { description: string; amount: number }[];
+  total: number;
+};
+
+// --- FINANCIAL DASHBOARD WIDGETS ---
+
+export type DashboardWidget = {
+  id: string;
+  title: string;
+  type: 'KPI' | 'CHART' | 'TABLE' | 'GAUGE';
+  data: any;
+  config: {
+    size: 'small' | 'medium' | 'large';
+    refreshInterval?: number;
+  };
+};
+
+export type KPIWidget = {
+  title: string;
+  value: number;
+  previousValue?: number;
+  target?: number;
+  format: 'currency' | 'percentage' | 'number';
+  trend: 'up' | 'down' | 'neutral';
+  icon: string;
+};
+
+// --- PERIOD CLOSE TYPES ---
+
+export type PeriodCloseValidation = {
+  canClose: boolean;
+  errors: string[];
+  warnings: string[];
+  checklist: {
+    allJournalEntriesPosted: boolean;
+    allInvoicesProcessed: boolean;
+    bankReconciliationComplete: boolean;
+    inventoryValuationComplete: boolean;
+    fixedAssetsRecorded: boolean;
+    accrualEntriesPosted: boolean;
+  };
+};
+
+// --- MULTI-CURRENCY TYPES (for future expansion) ---
+
+export type CurrencyRate = {
+  id: string;
+  fromCurrency: string;
+  toCurrency: string;
+  rate: number;
+  effectiveDate: Date;
+  isActive: boolean;
+};
+
+export type MultiCurrencyAmount = {
+  localAmount: number;
+  foreignAmount?: number;
+  currencyCode: string;
+  exchangeRate?: number;
+};
+
+// --- APPROVAL WORKFLOW TYPES ---
+
+export type ApprovalWorkflow = {
+  id: string;
+  documentType: DocumentType;
+  businessUnitId: string;
+  steps: ApprovalStep[];
+  isActive: boolean;
+};
+
+export type ApprovalStep = {
+  id: string;
+  stepNumber: number;
+  approverRoleId: string;
+  isRequired: boolean;
+  minimumAmount?: number;
+  maximumAmount?: number;
+};
+
+export type DocumentApproval = {
+  id: string;
+  documentId: string;
+  documentType: DocumentType;
+  stepNumber: number;
+  approverId: string;
+  approvedAt: Date;
+  comments?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
 };

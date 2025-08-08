@@ -279,13 +279,14 @@ export function FinancialDashboardClient({ data, businessUnitId }: FinancialDash
           </Card>
         </TabsContent>
       </Tabs>
-      {/* --- FINANCIAL RATIOS SECTION --- */}
+    
+      {/*
       {ratios && (
         <div className="grid gap-4 grid-cols-1">
           <FinancialRatiosCard ratios={ratios} />
         </div>
       )}
-
+*/}
       {/* --- CASH FLOW TREND --- */}
       <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
         <Card>

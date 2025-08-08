@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -65,77 +66,83 @@ export const BankAccountForm: React.FC<BankAccountFormProps> = ({ assetAccounts 
       <Separator />
       <Form {...form}>
         <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8 w-full">
-          <div className="md:grid md:grid-cols-2 gap-8">
-            <FormField
-              control={form.control}
-              name="name"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Account Name</FormLabel>
-                  <FormControl>
-                    <Input disabled={loading} placeholder="e.g., Main Operating Account" {...field} />
-                  </FormControl>
-                  <FormDescription>
-                    A descriptive name for this bank account
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="bankName"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Bank Name</FormLabel>
-                  <FormControl>
-                    <Input disabled={loading} placeholder="e.g., BDO, BPI, Metrobank" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="accountNumber"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Account Number</FormLabel>
-                  <FormControl>
-                    <Input disabled={loading} placeholder="1234567890" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="glAccountId"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>GL Account</FormLabel>
-                  <Select disabled={loading} onValueChange={field.onChange} value={field.value}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Bank Account Details</CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-6 md:grid-cols-2">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Account Name</FormLabel>
                     <FormControl>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select GL account" />
-                      </SelectTrigger>
+                      <Input disabled={loading} placeholder="e.g., Main Operating Account" {...field} />
                     </FormControl>
-                    <SelectContent>
-                      {assetAccounts.map((account) => (
-                        <SelectItem key={account.id} value={account.id}>
-                          {account.accountCode} - {account.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <FormDescription>
-                    Link this bank account to a GL account for automatic posting
-                  </FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-          </div>
+                    <FormDescription>
+                      A descriptive name for this bank account
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="bankName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Bank Name</FormLabel>
+                    <FormControl>
+                      <Input disabled={loading} placeholder="e.g., BDO, BPI, Metrobank" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="accountNumber"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Account Number</FormLabel>
+                    <FormControl>
+                      <Input disabled={loading} placeholder="1234567890" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              <FormField
+                control={form.control}
+                name="glAccountId"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>GL Account</FormLabel>
+                    <Select disabled={loading} onValueChange={field.onChange} value={field.value}>
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select GL account" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {assetAccounts.map((account) => (
+                          <SelectItem key={account.id} value={account.id}>
+                            {account.accountCode} - {account.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      Link this bank account to a GL account for automatic posting
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+
           <Button disabled={loading} type="submit">
             Create Bank Account
           </Button>

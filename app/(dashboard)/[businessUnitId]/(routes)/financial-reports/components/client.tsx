@@ -11,8 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 
-import { generateTrialBalance, generateFinancialReports } from "@/lib/actions/acctg-actions";
-import { TrialBalanceItem, FinancialReportData } from "@/types/acctg-types";
+import { generateTrialBalance, generateFinancialReports } from "@/lib/actions/acctg3-actions";
+import { TrialBalanceItem, FinancialReportData } from "@/types/financials-types";
 import { formatter } from "@/lib/utils";
 
 interface FinancialReportsClientProps {

@@ -3,7 +3,8 @@
 import { ColumnDef } from "@tanstack/react-table"
 import { Badge } from "@/components/ui/badge"
 import { BankAccountColumn } from "@/types/financials-types"
-import { BankAccountCellAction } from "./bank-accounts-cell-actions"
+import { BankAccountCellAction } from "./bank-accounts-cell-actions";
+
 
 export const columns: ColumnDef<BankAccountColumn>[] = [
   {

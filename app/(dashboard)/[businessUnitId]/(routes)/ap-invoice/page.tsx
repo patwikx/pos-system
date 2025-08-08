@@ -1,9 +1,10 @@
 import { headers } from "next/headers";
 import { format } from "date-fns";
-import { getAPInvoices } from "@/lib/actions/financials-actions";
 import { APInvoiceColumn } from "@/types/financials-types";
 import { formatter } from "@/lib/utils";
 import { APInvoiceClient } from "./components/ap-invoice-client";
+// Corrected import path to financials-actions
+import { getAPInvoices } from "@/lib/actions/financials-actions"; 
 
 export default async function APInvoicePage() {
   const headersList = await headers();

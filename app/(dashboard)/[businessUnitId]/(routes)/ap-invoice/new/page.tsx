@@ -12,6 +12,7 @@ export default async function NewAPInvoicePage() {
     return <div className="p-8">Error: Business Unit could not be identified.</div>;
   }
 
+  // Awaited the promises to resolve before passing them to the component
   const [vendors, expenseAccounts] = await Promise.all([
     getBusinessPartners(businessUnitId, BusinessPartnerType.VENDOR),
     getAccountsForDropdown(businessUnitId, 'EXPENSE')

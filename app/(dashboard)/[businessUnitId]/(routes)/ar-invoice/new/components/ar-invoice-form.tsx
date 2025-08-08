@@ -21,7 +21,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Calendar } from "@/components/ui/calendar"
-import { cn } from "@/lib/utils"
+import { cn, formatter } from "@/lib/utils"
 import { BusinessPartnerOption, GlAccountOption } from "@/types/financials-types"
 
 const invoiceItemSchema = z.object({
@@ -305,3 +305,155 @@ export const ARInvoiceForm: React.FC<ARInvoiceFormProps> = ({
                                     }
                                   }} 
                                   value={field.value}
+                                >
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select menu item" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {menuItems.map((item) => (
+                                      <SelectItem key={item.id} value={item.id}>
+                                        {item.name} - {formatter.format(item.price)}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <FormField
+                            control={form.control}
+                            name={`items.${index}.description`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    disabled={loading}
+                                    placeholder="Item description..."
+                                    {...field}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <FormField
+                            control={form.control}
+                            name={`items.${index}.quantity`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    disabled={loading}
+                                    className="text-right"
+                                    {...field}
+                                    onChange={(e) => {
+                                      const quantity = parseFloat(e.target.value) || 0;
+                                      field.onChange(quantity);
+                                      updateLineTotal(index, quantity, watchedItems[index]?.unitPrice || 0);
+                                    }}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <FormField
+                            control={form.control}
+                            name={`items.${index}.unitPrice`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <FormControl>
+                                  <Input
+                                    type="number"
+                                    step="0.01"
+                                    min="0"
+                                    disabled={loading}
+                                    className="text-right"
+                                    {...field}
+                                    onChange={(e) => {
+                                      const unitPrice = parseFloat(e.target.value) || 0;
+                                      field.onChange(unitPrice);
+                                      updateLineTotal(index, watchedItems[index]?.quantity || 0, unitPrice);
+                                    }}
+                                  />
+                                </FormControl>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          ₱{(watchedItems[index]?.lineTotal || 0).toFixed(2)}
+                        </TableCell>
+                        <TableCell>
+                          <FormField
+                            control={form.control}
+                            name={`items.${index}.glAccountId`}
+                            render={({ field }) => (
+                              <FormItem>
+                                <Select disabled={loading} onValueChange={field.onChange} value={field.value}>
+                                  <FormControl>
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select account" />
+                                    </SelectTrigger>
+                                  </FormControl>
+                                  <SelectContent>
+                                    {revenueAccounts.map((account) => (
+                                      <SelectItem key={account.id} value={account.id}>
+                                        {account.accountCode} - {account.name}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <FormMessage />
+                              </FormItem>
+                            )}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => remove(index)}
+                            disabled={fields.length === 1}
+                            className="text-red-500 hover:text-red-700"
+                          >
+                            <Trash className="h-4 w-4" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+              
+              <div className="flex justify-between items-center mt-4 p-4 bg-muted/50 rounded-lg">
+                <span className="font-semibold">Total Amount:</span>
+                <span className="text-xl font-bold">₱{totalAmount.toFixed(2)}</span>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end">
+            <Button disabled={loading} type="submit">
+              Create A/R Invoice
+            </Button>
+          </div>
+        </form>
+      </Form>
+    </>
+  );
+};

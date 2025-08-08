@@ -2,12 +2,12 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/auth';
 import prismadb from '@/lib/db';
 
-export async function POST(
+export async function PATCH(
   req: Request,
-  context: { params: Promise<{ businessUnitId: string }> }
+  context: { params: Promise<{ businessUnitId: string; entryId: string }> }
 ) {
   try {
-    const { businessUnitId } = await context.params;
+    const { businessUnitId, entryId } = await context.params;
     const session = await auth();
     
     if (!session?.user?.id) {
@@ -28,31 +28,51 @@ export async function POST(
       return new NextResponse("Total debits must equal total credits", { status: 400 });
     }
 
-    // Get next document number
-    const series = await prismadb.numberingSeries.findUnique({
-      where: {
-        documentType_businessUnitId: {
-          documentType: 'JOURNAL_ENTRY',
-          businessUnitId
-        }
-      }
+    // Check if journal entry exists and is editable
+    const existingEntry = await prismadb.journalEntry.findUnique({
+      where: { id: entryId, businessUnitId },
+      include: { lines: true }
     });
 
-    if (!series) {
-      return new NextResponse("Numbering series not found", { status: 404 });
+    if (!existingEntry) {
+      return new NextResponse("Journal entry not found", { status: 404 });
     }
 
-    const docNum = `${series.prefix}${series.nextNumber}`;
-
     const journalEntry = await prismadb.$transaction(async (tx) => {
-      // Create journal entry
-      const entry = await tx.journalEntry.create({
+      // Reverse the old balances
+      for (const oldLine of existingEntry.lines) {
+        const account = await tx.glAccount.findUnique({
+          where: { accountCode: oldLine.glAccountCode },
+          include: { accountType: true }
+        });
+
+        if (account) {
+          let balanceChange = 0;
+          
+          if (['ASSET', 'EXPENSE'].includes(account.accountType.name)) {
+            balanceChange = (oldLine.credit || 0) - (oldLine.debit || 0);
+          } else {
+            balanceChange = (oldLine.debit || 0) - (oldLine.credit || 0);
+          }
+
+          await tx.glAccount.update({
+            where: { id: account.id },
+            data: { balance: { increment: balanceChange } }
+          });
+        }
+      }
+
+      // Delete old lines
+      await tx.journalEntryLine.deleteMany({
+        where: { journalEntryId: entryId }
+      });
+
+      // Update journal entry and create new lines
+      const entry = await tx.journalEntry.update({
+        where: { id: entryId },
         data: {
-          docNum,
           postingDate: new Date(postingDate),
           remarks,
-          authorId: session.user!.id,
-          businessUnitId,
           lines: {
             create: lines.map((line: any) => ({
               glAccountCode: line.glAccountCode,
@@ -63,15 +83,18 @@ export async function POST(
         },
         include: {
           author: { select: { id: true, name: true } },
+          approver: { select: { id: true, name: true } },
           lines: {
             include: {
               glAccount: true
             }
-          }
+          },
+          businessUnit: { select: { id: true, name: true } },
+          accountingPeriod: { select: { id: true, name: true } }
         }
       });
 
-      // Update account balances
+      // Apply new balances
       for (const line of lines) {
         const account = await tx.glAccount.findUnique({
           where: { accountCode: line.glAccountCode },
@@ -81,7 +104,6 @@ export async function POST(
         if (account) {
           let balanceChange = 0;
           
-          // Determine balance change based on account type
           if (['ASSET', 'EXPENSE'].includes(account.accountType.name)) {
             balanceChange = (line.debit || 0) - (line.credit || 0);
           } else {
@@ -95,43 +117,105 @@ export async function POST(
         }
       }
 
-      // Update numbering series
-      await tx.numberingSeries.update({
-        where: { id: series.id },
-        data: { nextNumber: { increment: 1 } }
-      });
-
       return entry;
     });
 
     return NextResponse.json(journalEntry);
   } catch (error) {
-    console.log('[JOURNAL_ENTRY_POST]', error);
+    console.log('[JOURNAL_ENTRY_PATCH]', error);
+    return new NextResponse("Internal error", { status: 500 });
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  context: { params: Promise<{ businessUnitId: string; entryId: string }> }
+) {
+  try {
+    const { businessUnitId, entryId } = await context.params;
+    const session = await auth();
+    
+    if (!session?.user?.id) {
+      return new NextResponse("Unauthenticated", { status: 401 });
+    }
+
+    // Get the journal entry with lines
+    const journalEntry = await prismadb.journalEntry.findUnique({
+      where: { id: entryId, businessUnitId },
+      include: { lines: true }
+    });
+
+    if (!journalEntry) {
+      return new NextResponse("Journal entry not found", { status: 404 });
+    }
+
+    await prismadb.$transaction(async (tx) => {
+      // Reverse the account balances
+      for (const line of journalEntry.lines) {
+        const account = await tx.glAccount.findUnique({
+          where: { accountCode: line.glAccountCode },
+          include: { accountType: true }
+        });
+
+        if (account) {
+          let balanceChange = 0;
+          
+          if (['ASSET', 'EXPENSE'].includes(account.accountType.name)) {
+            balanceChange = (line.credit || 0) - (line.debit || 0);
+          } else {
+            balanceChange = (line.debit || 0) - (line.credit || 0);
+          }
+
+          await tx.glAccount.update({
+            where: { id: account.id },
+            data: { balance: { increment: balanceChange } }
+          });
+        }
+      }
+
+      // Delete the journal entry (lines will be deleted by cascade)
+      await tx.journalEntry.delete({
+        where: { id: entryId }
+      });
+    });
+
+    return NextResponse.json({ message: 'Journal entry deleted successfully' });
+  } catch (error) {
+    console.log('[JOURNAL_ENTRY_DELETE]', error);
     return new NextResponse("Internal error", { status: 500 });
   }
 }
 
 export async function GET(
   req: Request,
-  context: { params: Promise<{ businessUnitId: string }> }
+  context: { params: Promise<{ businessUnitId: string; entryId: string }> }
 ) {
   try {
-    const { businessUnitId } = await context.params;
+    const { businessUnitId, entryId } = await context.params;
 
-    const journalEntries = await prismadb.journalEntry.findMany({
-      where: { businessUnitId },
+    const journalEntry = await prismadb.journalEntry.findUnique({
+      where: { 
+        id: entryId,
+        businessUnitId 
+      },
       include: {
         author: { select: { id: true, name: true } },
+        approver: { select: { id: true, name: true } },
         lines: {
           include: {
             glAccount: true
           }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
+        },
+        businessUnit: { select: { id: true, name: true } },
+        accountingPeriod: { select: { id: true, name: true } }
+      }
     });
 
-    return NextResponse.json(journalEntries);
+    if (!journalEntry) {
+      return new NextResponse("Journal entry not found", { status: 404 });
+    }
+
+    return NextResponse.json(journalEntry);
   } catch (error) {
     console.log('[JOURNAL_ENTRY_GET]', error);
     return new NextResponse("Internal error", { status: 500 });
