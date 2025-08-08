@@ -1,0 +1,104 @@
+"use client";
+
+import axios from "axios";
+import { useState } from "react";
+import { Copy, Edit, MoreHorizontal, Trash, Eye, DollarSign } from "lucide-react";
+import { toast } from "sonner";
+import { useParams, useRouter } from "next/navigation";
+
+import { Button } from "@/components/ui/button";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuLabel, 
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
+import { AlertModal } from "@/components/modals/alert-modal";
+import { APInvoiceColumn } from "@/types/financials-types";
+
+interface APInvoiceCellActionProps {
+  data: APInvoiceColumn;
+}
+
+export const APInvoiceCellAction: React.FC<APInvoiceCellActionProps> = ({ data }) => {
+  const router = useRouter();
+  const params = useParams();
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const balance = parseFloat(data.balance.replace(/[^0-9.-]/g, ''));
+  const isPaid = balance <= 0;
+
+  const onConfirm = async () => {
+    try {
+      setLoading(true);
+      await axios.delete(`/api/${params.businessUnitId}/ap-invoice/${data.id}`);
+      toast.success('A/P Invoice deleted.');
+      router.refresh();
+    } catch (error: any) {
+      toast.error(error.response?.data || 'Something went wrong.');
+    } finally {
+      setLoading(false);
+      setOpen(false);
+    }
+  };
+
+  const onCopy = (docNum: string) => {
+    navigator.clipboard.writeText(docNum);
+    toast.success('Bill number copied to clipboard.');
+  }
+
+  return (
+    <>
+      <AlertModal 
+        isOpen={open} 
+        onClose={() => setOpen(false)}
+        onConfirm={onConfirm}
+        loading={loading}
+      />
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" className="h-8 w-8 p-0">
+            <span className="sr-only">Open menu</span>
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => onCopy(data.docNum)}>
+            <Copy className="mr-2 h-4 w-4" /> Copy Bill #
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => router.push(`/${params.businessUnitId}/ap-invoice/${data.id}`)}
+          >
+            <Eye className="mr-2 h-4 w-4" /> View Details
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          {!isPaid && (
+            <DropdownMenuItem
+              onClick={() => router.push(`/${params.businessUnitId}/ap-invoice/${data.id}/payment`)}
+            >
+              <DollarSign className="mr-2 h-4 w-4" /> Record Payment
+            </DropdownMenuItem>
+          )}
+          {data.status === 'OPEN' && (
+            <DropdownMenuItem
+              onClick={() => router.push(`/${params.businessUnitId}/ap-invoice/${data.id}/edit`)}
+            >
+              <Edit className="mr-2 h-4 w-4" /> Edit
+            </DropdownMenuItem>
+          )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            onClick={() => setOpen(true)}
+            className="text-red-600 focus:text-red-700 focus:bg-red-100"
+          >
+            <Trash className="mr-2 h-4 w-4" /> Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </>
+  );
+};

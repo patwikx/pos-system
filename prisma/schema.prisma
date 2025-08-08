@@ -479,6 +479,7 @@ model BankAccount {
   incomingPayments IncomingPayment[]
   outgoingPayments OutgoingPayment[]
   deposits         Deposit[]
+  createdAt        DateTime          @default(now())
 }
 
 model IncomingPayment {

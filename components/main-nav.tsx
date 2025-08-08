@@ -7,7 +7,7 @@ import type { LucideIcon } from "lucide-react"; // Import the type for icons
 import { 
     ChevronDown, Home, ShoppingCart, Settings, User, Menu,
     BookOpen, Box, Truck, Tag, Users, Table, Computer,
-    BookCheck, HandCoins, FileText, Landmark, Banknote, CalendarClock,
+    BookCheck, HandCoins, FileText, Landmark, Banknote, CalendarClock, BarChart3,
     ClipboardPenLine
 } from 'lucide-react';
 
@@ -63,9 +63,13 @@ export function MainNav({
   const accountingRoutes: Route[] = [
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/journal-entry`, label: 'Journal Entries', icon: BookOpen, active: pathname.includes(`/journal-entry`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/chart-of-accounts`, label: 'Chart of Accounts', icon: Landmark, active: pathname.includes(`/chart-of-accounts`)}] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/financial-dashboard`, label: 'Financial Dashboard', icon: BarChart3, active: pathname.includes(`/financial-dashboard`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/ap-invoice`, label: 'Vendor Bills (A/P)', icon: FileText, active: pathname.includes(`/ap-invoice`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/ar-invoice`, label: 'Invoices (A/R)', icon: FileText, active: pathname.includes(`/ar-invoice`)}] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/incoming-payments`, label: 'Customer Payments', icon: HandCoins, active: pathname.includes(`/incoming-payments`)}] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/outgoing-payments`, label: 'Vendor Payments', icon: HandCoins, active: pathname.includes(`/outgoing-payments`)}] : []),
     ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/bank-accounts`, label: 'Bank Accounts', icon: Banknote, active: pathname.includes(`/bank-accounts`)}] : []),
+    ...(hasAccountingAccess ? [{ href: `/${params.businessUnitId}/financial-reports`, label: 'Financial Reports', icon: FileText, active: pathname.includes(`/financial-reports`)}] : []),
     ...(hasManagementAccess ? [{ href: `/${params.businessUnitId}/business-partners`, label: 'Business Partners', icon: Users, active: pathname.includes(`/business-partners`)}] : []),
     ...(hasManagementAccess ? [{ href: `/${params.businessUnitId}/reservations`, label: 'Reservations', icon: CalendarClock, active: pathname.includes(`/reservations`)}] : []),
   ];
