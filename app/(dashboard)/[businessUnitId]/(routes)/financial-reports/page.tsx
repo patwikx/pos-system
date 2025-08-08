@@ -6,7 +6,7 @@ export default async function FinancialReportsPage() {
   const businessUnitId = headersList.get("x-business-unit-id");
 
   if (!businessUnitId) {
-    return <div className="p-8">Error: Business Unit could not be identified.</div>;
+    return <div className="p-8">Error: Business Unit could not be identified...</div>;
   }
 
   return (
