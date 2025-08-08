@@ -2,7 +2,7 @@
 
 import axios from "axios";
 import { useState } from "react";
-import { Copy, Edit, MoreHorizontal, Trash } from "lucide-react";
+import { Copy, Edit, MoreHorizontal, Trash, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 
@@ -16,6 +16,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { AlertModal } from "@/components/modals/alert-modal";
 import { AccountingPeriodColumn } from "./columns";
+import { PeriodCloseDialog } from "./period-close-dialog";
+import { PeriodStatus } from "@prisma/client";
 
 interface CellActionProps {
   data: AccountingPeriodColumn;
@@ -48,6 +50,9 @@ export const CellAction: React.FC<CellActionProps> = ({
     toast.success('Period ID copied to clipboard.');
   }
 
+  const canEdit = data.status === PeriodStatus.OPEN;
+  const canClose = data.status === PeriodStatus.OPEN;
+  const canDelete = data.journalEntryCount === 0;
   return (
     <>
       <AlertModal 
@@ -68,17 +73,28 @@ export const CellAction: React.FC<CellActionProps> = ({
           <DropdownMenuItem onClick={() => onCopy(data.id)}>
             <Copy className="mr-2 h-4 w-4" /> Copy Id
           </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => router.push(`/${params.businessUnitId}/accounting-periods/${data.id}`)}
-          >
-            <Edit className="mr-2 h-4 w-4" /> Update
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => setOpen(true)}
-            className="text-red-600 focus:text-red-700 focus:bg-red-100"
-          >
-            <Trash className="mr-2 h-4 w-4" /> Delete
-          </DropdownMenuItem>
+          {canEdit && (
+            <DropdownMenuItem
+              onClick={() => router.push(`/${params.businessUnitId}/accounting-periods/${data.id}`)}
+            >
+              <Edit className="mr-2 h-4 w-4" /> Update
+            </DropdownMenuItem>
+          )}
+          {canClose && (
+            <PeriodCloseDialog period={data}>
+              <DropdownMenuItem onSelect={(e) => e.preventDefault()}>
+                <Lock className="mr-2 h-4 w-4" /> Close Period
+              </DropdownMenuItem>
+            </PeriodCloseDialog>
+          )}
+          {canDelete && (
+            <DropdownMenuItem
+              onClick={() => setOpen(true)}
+              className="text-red-600 focus:text-red-700 focus:bg-red-100"
+            >
+              <Trash className="mr-2 h-4 w-4" /> Delete
+            </DropdownMenuItem>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
     </>

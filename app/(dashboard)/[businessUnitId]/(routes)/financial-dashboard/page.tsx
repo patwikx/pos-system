@@ -16,7 +16,7 @@ export default async function FinancialDashboardPage() {
   return (
     <div className="flex-col">
       <div className="flex-1 space-y-4 p-8 pt-6">
-        <FinancialDashboardClient data={dashboardData} />
+        <FinancialDashboardClient data={dashboardData} businessUnitId={businessUnitId} />
       </div>
     </div>
   );

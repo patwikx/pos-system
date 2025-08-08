@@ -6,7 +6,6 @@ import { AccountingPeriodColumn } from "./components/columns";
 import { AccountingPeriodsClient } from "./components/client";
 
 export default async function AccountingPeriodsPage() {
-  // This is the correct pattern, using headers.
   const headersList = await headers();
   const businessUnitId = headersList.get("x-business-unit-id");
 
@@ -17,6 +16,11 @@ export default async function AccountingPeriodsPage() {
   const accountingPeriods = await prismadb.accountingPeriod.findMany({
     where: {
       businessUnitId: businessUnitId
+    },
+    include: {
+      _count: {
+        select: { journalEntries: true }
+      }
     },
     orderBy: {
       startDate: 'desc'
@@ -29,6 +33,7 @@ export default async function AccountingPeriodsPage() {
     startDate: format(item.startDate, 'MMMM do, yyyy'),
     endDate: format(item.endDate, 'MMMM do, yyyy'),
     status: item.status,
+    journalEntryCount: item._count.journalEntries,
   }));
 
   return (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -24,14 +24,35 @@ import { formatter } from "@/lib/utils";
 import { FinancialChart } from "./financial-chart";
 import { TopPartnersTable } from "./top-partners-chart";
 import { AgingAnalysisChart } from "./aging-analysis-chart";
+import { FinancialRatiosCard } from "./financial-ratios-chart";
+import { calculateFinancialRatios } from "@/lib/actions/financials-actions";
 
 
 interface FinancialDashboardClientProps {
   data: FinancialDashboardData;
+  businessUnitId: string;
 }
 
-export function FinancialDashboardClient({ data }: FinancialDashboardClientProps) {
+export function FinancialDashboardClient({ data, businessUnitId }: FinancialDashboardClientProps) {
   const [selectedPeriod, setSelectedPeriod] = useState('current-month');
+  const [ratios, setRatios] = useState<any>(null);
+  const [loadingRatios, setLoadingRatios] = useState(false);
+
+  const loadRatios = async () => {
+    setLoadingRatios(true);
+    try {
+      const financialRatios = await calculateFinancialRatios(businessUnitId);
+      setRatios(financialRatios);
+    } catch (error) {
+      console.error('Error loading ratios:', error);
+    } finally {
+      setLoadingRatios(false);
+    }
+  };
+
+  useEffect(() => {
+    loadRatios();
+  }, [businessUnitId]);
 
   const kpiCards = [
     {
@@ -258,6 +279,54 @@ export function FinancialDashboardClient({ data }: FinancialDashboardClientProps
           </Card>
         </TabsContent>
       </Tabs>
+      {/* --- FINANCIAL RATIOS SECTION --- */}
+      {ratios && (
+        <div className="grid gap-4 grid-cols-1">
+          <FinancialRatiosCard ratios={ratios} />
+        </div>
+      )}
+
+      {/* --- CASH FLOW TREND --- */}
+      <div className="grid gap-4 grid-cols-1 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Cash Flow Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <FinancialChart
+              data={data.cashFlowTrend.map(item => ({
+                month: item.month,
+                revenue: item.inflow,
+                expenses: item.outflow
+              }))}
+              type="revenue-expenses"
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Profit Margin Trend</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {data.profitMarginTrend.map((item, index) => (
+                <div key={index} className="flex justify-between items-center">
+                  <span className="text-sm">{item.month}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">{item.margin.toFixed(1)}%</span>
+                    {item.margin > 20 ? (
+                      <TrendingUp className="h-4 w-4 text-green-600" />
+                    ) : (
+                      <TrendingDown className="h-4 w-4 text-red-600" />
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

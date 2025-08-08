@@ -15,7 +15,10 @@ import {
   DocumentStatus,
   BusinessPartnerType,
   User,
-  BusinessUnit
+  BusinessUnit,
+  MenuItem,
+  AccountingPeriod,
+  PeriodStatus
 } from '@prisma/client';
 
 // --- EXTENDED TYPES WITH RELATIONS ---
@@ -25,7 +28,6 @@ export type GlAccountWithDetails = GlAccount & {
   _count: {
     journalLines: number;
   };
-  balance: number;
 };
 
 export type JournalEntryWithDetails = JournalEntry & {
@@ -47,7 +49,7 @@ export type ARInvoiceWithDetails = ARInvoice & {
 };
 
 export type ARInvoiceItemWithDetails = ARInvoiceItem & {
-  menuItem: { id: string; name: string };
+  menuItem: { id: string; name: string } | null;
   glAccount: Pick<GlAccount, 'id' | 'accountCode' | 'name'>;
 };
 
@@ -88,6 +90,13 @@ export type OutgoingPaymentWithDetails = OutgoingPayment & {
 export type DepositWithDetails = Deposit & {
   bankAccount: Pick<BankAccount, 'id' | 'name'>;
   journalEntry: JournalEntry | null;
+};
+
+export type AccountingPeriodWithDetails = AccountingPeriod & {
+  businessUnit: Pick<BusinessUnit, 'id' | 'name'>;
+  _count: {
+    journalEntries: number;
+  };
 };
 
 // --- FORM DATA TYPES ---
@@ -170,6 +179,7 @@ export type CreateIncomingPaymentData = {
   paymentDate: Date;
   amount: number;
   bankAccountId: string;
+  arInvoiceIds?: string[];
 };
 
 export type CreateOutgoingPaymentData = {
@@ -178,6 +188,7 @@ export type CreateOutgoingPaymentData = {
   paymentDate: Date;
   amount: number;
   bankAccountId: string;
+  apInvoiceIds?: string[];
 };
 
 export type CreateDepositData = {
@@ -185,6 +196,15 @@ export type CreateDepositData = {
   bankAccountId: string;
   depositDate: Date;
   amount: number;
+  description?: string;
+};
+
+export type CreateAccountingPeriodData = {
+  name: string;
+  startDate: Date;
+  endDate: Date;
+  status: PeriodStatus;
+  businessUnitId: string;
 };
 
 // --- FILTER TYPES ---
@@ -202,6 +222,7 @@ export type FinancialFilters = {
 export type JournalEntryFilters = FinancialFilters & {
   authorId?: string;
   approverId?: string;
+  accountingPeriodId?: string;
 };
 
 export type ARInvoiceFilters = FinancialFilters & {
@@ -212,6 +233,18 @@ export type ARInvoiceFilters = FinancialFilters & {
 export type APInvoiceFilters = FinancialFilters & {
   isPaid?: boolean;
   overdue?: boolean;
+};
+
+export type BankAccountFilters = {
+  businessUnitId: string;
+  searchTerm?: string;
+  hasBalance?: boolean;
+};
+
+export type AccountingPeriodFilters = {
+  businessUnitId: string;
+  status?: PeriodStatus;
+  year?: number;
 };
 
 // --- DASHBOARD & ANALYTICS TYPES ---
@@ -232,6 +265,8 @@ export type FinancialDashboardData = {
   topVendors: { name: string; amount: number }[];
   agingReceivables: { period: string; amount: number }[];
   agingPayables: { period: string; amount: number }[];
+  cashFlowTrend: { month: string; inflow: number; outflow: number; net: number }[];
+  profitMarginTrend: { month: string; margin: number }[];
 };
 
 export type TrialBalanceItem = {
@@ -361,6 +396,16 @@ export type OutgoingPaymentColumn = {
   createdAt: string;
 };
 
+export type AccountingPeriodColumn = {
+  id: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  status: PeriodStatus;
+  journalEntryCount: number;
+  createdAt: string;
+};
+
 // --- API RESPONSE TYPES ---
 
 export type FinancialApiResponse<T> = {
@@ -392,6 +437,7 @@ export type JournalEntryValidation = {
 
 export type AccountingPeriodValidation = {
   isValid: boolean;
+  canClose: boolean;
   errors: string[];
   warnings: string[];
 };
@@ -420,11 +466,18 @@ export type BankAccountOption = {
   id: string;
   name: string;
   bankName: string;
+  accountNumber: string;
 };
 
 export type UserOption = {
   id: string;
   name: string | null;
+};
+
+export type MenuItemOption = {
+  id: string;
+  name: string;
+  price: number;
 };
 
 // --- REPORT CONFIGURATION TYPES ---
@@ -443,4 +496,87 @@ export type ReportConfig = {
   includeZeroBalances: boolean;
   groupByAccountType: boolean;
   showComparativePeriod: boolean;
+};
+
+// --- AGING ANALYSIS TYPES ---
+
+export type AgingBucket = {
+  period: string;
+  amount: number;
+  count: number;
+  percentage: number;
+};
+
+export type AgingAnalysis = {
+  buckets: AgingBucket[];
+  totalAmount: number;
+  totalCount: number;
+  averageDaysOutstanding: number;
+};
+
+// --- CASH FLOW TYPES ---
+
+export type CashFlowCategory = {
+  name: string;
+  items: { description: string; amount: number }[];
+  total: number;
+};
+
+export type CashFlowStatement = {
+  operating: CashFlowCategory;
+  investing: CashFlowCategory;
+  financing: CashFlowCategory;
+  netCashFlow: number;
+  beginningCash: number;
+  endingCash: number;
+};
+
+// --- FINANCIAL RATIOS ---
+
+export type FinancialRatios = {
+  liquidity: {
+    currentRatio: number;
+    quickRatio: number;
+    cashRatio: number;
+  };
+  profitability: {
+    grossProfitMargin: number;
+    netProfitMargin: number;
+    returnOnAssets: number;
+    returnOnEquity: number;
+  };
+  efficiency: {
+    assetTurnover: number;
+    receivablesTurnover: number;
+    payablesTurnover: number;
+    inventoryTurnover: number;
+  };
+  leverage: {
+    debtToEquity: number;
+    debtToAssets: number;
+    equityMultiplier: number;
+  };
+};
+
+// --- BUDGET & FORECAST TYPES ---
+
+export type BudgetItem = {
+  accountCode: string;
+  accountName: string;
+  budgetedAmount: number;
+  actualAmount: number;
+  variance: number;
+  variancePercentage: number;
+};
+
+export type BudgetAnalysis = {
+  revenue: BudgetItem[];
+  expenses: BudgetItem[];
+  totalBudgetedRevenue: number;
+  totalActualRevenue: number;
+  totalBudgetedExpenses: number;
+  totalActualExpenses: number;
+  netBudgetedIncome: number;
+  netActualIncome: number;
+  overallVariance: number;
 };

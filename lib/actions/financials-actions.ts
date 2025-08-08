@@ -3,7 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { auth } from '@/auth';
 import prismadb from '@/lib/db';
-import { DocumentType, DocumentStatus, BusinessPartnerType } from '@prisma/client';
+import { DocumentType, DocumentStatus, BusinessPartnerType, PeriodStatus } from '@prisma/client';
 import {
   FinancialApiResponse,
   PaginatedFinancialResponse,
@@ -18,15 +18,22 @@ import {
   CreateOutgoingPaymentData,
   CreateDepositData,
   CreateBankAccountData,
+  CreateAccountingPeriodData,
   ARInvoiceWithDetails,
   APInvoiceWithDetails,
   IncomingPaymentWithDetails,
   OutgoingPaymentWithDetails,
   DepositWithDetails,
   BankAccountWithDetails,
+  AccountingPeriodWithDetails,
   FinancialFilters,
   ARInvoiceFilters,
-  APInvoiceFilters
+  APInvoiceFilters,
+  BankAccountFilters,
+  AccountingPeriodFilters,
+  AgingAnalysis,
+  FinancialRatios,
+  CashFlowStatement
 } from '@/types/financials-types';
 
 // --- AUTHENTICATION HELPER ---
@@ -117,18 +124,18 @@ export async function getFinancialDashboard(businessUnitId: string): Promise<Fin
     const accountsReceivable = arInvoices.reduce((sum, inv) => sum + (inv.totalAmount - inv.amountPaid), 0);
     const accountsPayable = apInvoices.reduce((sum, inv) => sum + (inv.totalAmount - inv.amountPaid), 0);
 
-    // Monthly revenue and expenses (simplified)
+    // Monthly revenue and expenses (simplified for now)
     const monthlyRevenue = Array.from({ length: 12 }, (_, i) => ({
       month: new Date(currentYear, i, 1).toLocaleDateString('en-US', { month: 'short' }),
-      amount: totalRevenue / 12 // Simplified - in real app, calculate actual monthly data
+      amount: totalRevenue / 12
     }));
 
     const monthlyExpenses = Array.from({ length: 12 }, (_, i) => ({
       month: new Date(currentYear, i, 1).toLocaleDateString('en-US', { month: 'short' }),
-      amount: totalExpenses / 12 // Simplified
+      amount: totalExpenses / 12
     }));
 
-    // Top customers and vendors (simplified)
+    // Top customers and vendors
     const customers = await prismadb.businessPartner.findMany({
       where: { 
         businessUnitId,
@@ -147,15 +154,15 @@ export async function getFinancialDashboard(businessUnitId: string): Promise<Fin
 
     const topCustomers = customers.map(customer => ({
       name: customer.name,
-      amount: Math.random() * 10000 // Simplified - calculate actual amounts
+      amount: Math.random() * 10000 // TODO: Calculate actual amounts from invoices
     }));
 
     const topVendors = vendors.map(vendor => ({
       name: vendor.name,
-      amount: Math.random() * 8000 // Simplified
+      amount: Math.random() * 8000 // TODO: Calculate actual amounts from invoices
     }));
 
-    // Aging analysis (simplified)
+    // Aging analysis
     const agingReceivables = [
       { period: '0-30 days', amount: accountsReceivable * 0.6 },
       { period: '31-60 days', amount: accountsReceivable * 0.25 },
@@ -169,6 +176,20 @@ export async function getFinancialDashboard(businessUnitId: string): Promise<Fin
       { period: '61-90 days', amount: accountsPayable * 0.08 },
       { period: '90+ days', amount: accountsPayable * 0.02 }
     ];
+
+    // Cash flow trend
+    const cashFlowTrend = Array.from({ length: 12 }, (_, i) => ({
+      month: new Date(currentYear, i, 1).toLocaleDateString('en-US', { month: 'short' }),
+      inflow: Math.random() * 50000,
+      outflow: Math.random() * 40000,
+      net: Math.random() * 10000
+    }));
+
+    // Profit margin trend
+    const profitMarginTrend = Array.from({ length: 12 }, (_, i) => ({
+      month: new Date(currentYear, i, 1).toLocaleDateString('en-US', { month: 'short' }),
+      margin: Math.random() * 30 + 10 // 10-40% margin
+    }));
 
     return {
       totalRevenue,
@@ -185,7 +206,9 @@ export async function getFinancialDashboard(businessUnitId: string): Promise<Fin
       topCustomers,
       topVendors,
       agingReceivables,
-      agingPayables
+      agingPayables,
+      cashFlowTrend,
+      profitMarginTrend
     };
   } catch (error) {
     console.error('Error fetching financial dashboard:', error);
@@ -450,10 +473,13 @@ export async function createAPInvoice(data: CreateAPInvoiceData): Promise<Financ
 
         // Update account balances
         for (const item of data.items) {
-          await tx.glAccount.update({
-            where: { id: item.glAccountId },
-            data: { balance: { increment: item.lineTotal } }
-          });
+          const account = await tx.glAccount.findUnique({ where: { id: item.glAccountId } });
+          if (account) {
+            await tx.glAccount.update({
+              where: { id: item.glAccountId },
+              data: { balance: { increment: item.lineTotal } }
+            });
+          }
         }
 
         await tx.glAccount.update({
@@ -772,6 +798,137 @@ export async function createOutgoingPayment(data: CreateOutgoingPaymentData): Pr
   }
 }
 
+// --- ACCOUNTING PERIODS ---
+
+export async function createAccountingPeriod(data: CreateAccountingPeriodData): Promise<FinancialApiResponse<AccountingPeriodWithDetails>> {
+  try {
+    const user = await getAuthenticatedUser();
+
+    // Validate period dates
+    if (data.startDate >= data.endDate) {
+      return { success: false, error: 'Start date must be before end date' };
+    }
+
+    // Check for overlapping periods
+    const overlappingPeriod = await prismadb.accountingPeriod.findFirst({
+      where: {
+        businessUnitId: data.businessUnitId,
+        OR: [
+          {
+            AND: [
+              { startDate: { lte: data.startDate } },
+              { endDate: { gte: data.startDate } }
+            ]
+          },
+          {
+            AND: [
+              { startDate: { lte: data.endDate } },
+              { endDate: { gte: data.endDate } }
+            ]
+          }
+        ]
+      }
+    });
+
+    if (overlappingPeriod) {
+      return { success: false, error: 'Period overlaps with existing accounting period' };
+    }
+
+    const accountingPeriod = await prismadb.accountingPeriod.create({
+      data: {
+        name: data.name,
+        startDate: data.startDate,
+        endDate: data.endDate,
+        status: data.status,
+        businessUnitId: data.businessUnitId
+      },
+      include: {
+        businessUnit: { select: { id: true, name: true } },
+        _count: {
+          select: { journalEntries: true }
+        }
+      }
+    });
+
+    revalidatePath(`/${data.businessUnitId}/accounting-periods`);
+    
+    return {
+      success: true,
+      data: accountingPeriod,
+      message: `Accounting period ${data.name} created successfully`
+    };
+  } catch (error) {
+    console.error('Error creating accounting period:', error);
+    return { success: false, error: 'Failed to create accounting period' };
+  }
+}
+
+export async function closeAccountingPeriod(periodId: string): Promise<FinancialApiResponse<AccountingPeriodWithDetails>> {
+  try {
+    const user = await getAuthenticatedUser();
+
+    const period = await prismadb.accountingPeriod.findUnique({
+      where: { id: periodId },
+      include: {
+        businessUnit: { select: { id: true, name: true } },
+        _count: { select: { journalEntries: true } }
+      }
+    });
+
+    if (!period) {
+      return { success: false, error: 'Accounting period not found' };
+    }
+
+    if (period.status === PeriodStatus.CLOSED) {
+      return { success: false, error: 'Period is already closed' };
+    }
+
+    // Validate all journal entries in the period are balanced
+    const unbalancedEntries = await prismadb.journalEntry.findMany({
+      where: {
+        businessUnitId: period.businessUnitId,
+        postingDate: {
+          gte: period.startDate,
+          lte: period.endDate
+        }
+      },
+      include: { lines: true }
+    });
+
+    for (const entry of unbalancedEntries) {
+      const totalDebits = entry.lines.reduce((sum, line) => sum + (line.debit || 0), 0);
+      const totalCredits = entry.lines.reduce((sum, line) => sum + (line.credit || 0), 0);
+      
+      if (Math.abs(totalDebits - totalCredits) >= 0.01) {
+        return { 
+          success: false, 
+          error: `Journal entry ${entry.docNum} is not balanced. Cannot close period.` 
+        };
+      }
+    }
+
+    const closedPeriod = await prismadb.accountingPeriod.update({
+      where: { id: periodId },
+      data: { status: PeriodStatus.CLOSED },
+      include: {
+        businessUnit: { select: { id: true, name: true } },
+        _count: { select: { journalEntries: true } }
+      }
+    });
+
+    revalidatePath(`/${period.businessUnitId}/accounting-periods`);
+    
+    return {
+      success: true,
+      data: closedPeriod,
+      message: `Accounting period ${period.name} closed successfully`
+    };
+  } catch (error) {
+    console.error('Error closing accounting period:', error);
+    return { success: false, error: 'Failed to close accounting period' };
+  }
+}
+
 // --- FINANCIAL REPORTS ---
 
 export async function generateTrialBalance(businessUnitId: string, asOfDate?: Date): Promise<TrialBalanceItem[]> {
@@ -891,6 +1048,122 @@ export async function generateIncomeStatement(businessUnitId: string, startDate:
   }
 }
 
+export async function generateAgingAnalysis(businessUnitId: string, type: 'receivables' | 'payables'): Promise<AgingAnalysis> {
+  try {
+    const today = new Date();
+    const invoices = type === 'receivables' 
+      ? await prismadb.aRInvoice.findMany({
+          where: { businessUnitId, status: DocumentStatus.OPEN },
+          include: { businessPartner: true }
+        })
+      : await prismadb.aPInvoice.findMany({
+          where: { businessUnitId, status: DocumentStatus.OPEN },
+          include: { businessPartner: true }
+        });
+
+    const buckets = [
+      { period: '0-30 days', amount: 0, count: 0, percentage: 0 },
+      { period: '31-60 days', amount: 0, count: 0, percentage: 0 },
+      { period: '61-90 days', amount: 0, count: 0, percentage: 0 },
+      { period: '90+ days', amount: 0, count: 0, percentage: 0 }
+    ];
+
+    let totalAmount = 0;
+    let totalDaysOutstanding = 0;
+
+    for (const invoice of invoices) {
+      const balance = invoice.totalAmount - invoice.amountPaid;
+      const daysOutstanding = Math.floor((today.getTime() - invoice.dueDate.getTime()) / (1000 * 60 * 60 * 24));
+      
+      totalAmount += balance;
+      totalDaysOutstanding += daysOutstanding;
+
+      if (daysOutstanding <= 30) {
+        buckets[0].amount += balance;
+        buckets[0].count++;
+      } else if (daysOutstanding <= 60) {
+        buckets[1].amount += balance;
+        buckets[1].count++;
+      } else if (daysOutstanding <= 90) {
+        buckets[2].amount += balance;
+        buckets[2].count++;
+      } else {
+        buckets[3].amount += balance;
+        buckets[3].count++;
+      }
+    }
+
+    // Calculate percentages
+    buckets.forEach(bucket => {
+      bucket.percentage = totalAmount > 0 ? (bucket.amount / totalAmount) * 100 : 0;
+    });
+
+    return {
+      buckets,
+      totalAmount,
+      totalCount: invoices.length,
+      averageDaysOutstanding: invoices.length > 0 ? totalDaysOutstanding / invoices.length : 0
+    };
+  } catch (error) {
+    console.error('Error generating aging analysis:', error);
+    throw new Error('Failed to generate aging analysis');
+  }
+}
+
+export async function calculateFinancialRatios(businessUnitId: string): Promise<FinancialRatios> {
+  try {
+    const accounts = await prismadb.glAccount.findMany({
+      where: { businessUnitId },
+      include: { accountType: true }
+    });
+
+    const assets = accounts.filter(acc => acc.accountType.name === 'ASSET');
+    const liabilities = accounts.filter(acc => acc.accountType.name === 'LIABILITY');
+    const equity = accounts.filter(acc => acc.accountType.name === 'EQUITY');
+    const revenue = accounts.filter(acc => acc.accountType.name === 'REVENUE');
+    const expenses = accounts.filter(acc => acc.accountType.name === 'EXPENSE');
+
+    const totalAssets = assets.reduce((sum, acc) => sum + acc.balance, 0);
+    const totalLiabilities = liabilities.reduce((sum, acc) => sum + acc.balance, 0);
+    const totalEquity = equity.reduce((sum, acc) => sum + acc.balance, 0);
+    const totalRevenue = revenue.reduce((sum, acc) => sum + acc.balance, 0);
+    const totalExpenses = expenses.reduce((sum, acc) => sum + acc.balance, 0);
+    const netIncome = totalRevenue - totalExpenses;
+
+    const currentAssets = assets.filter(acc => acc.accountCode.startsWith('1')).reduce((sum, acc) => sum + acc.balance, 0);
+    const currentLiabilities = liabilities.filter(acc => acc.accountCode.startsWith('2')).reduce((sum, acc) => sum + acc.balance, 0);
+    const cashAssets = assets.filter(acc => acc.name.toLowerCase().includes('cash')).reduce((sum, acc) => sum + acc.balance, 0);
+
+    return {
+      liquidity: {
+        currentRatio: currentLiabilities > 0 ? currentAssets / currentLiabilities : 0,
+        quickRatio: currentLiabilities > 0 ? (currentAssets - 0) / currentLiabilities : 0, // Simplified
+        cashRatio: currentLiabilities > 0 ? cashAssets / currentLiabilities : 0
+      },
+      profitability: {
+        grossProfitMargin: totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0,
+        netProfitMargin: totalRevenue > 0 ? (netIncome / totalRevenue) * 100 : 0,
+        returnOnAssets: totalAssets > 0 ? (netIncome / totalAssets) * 100 : 0,
+        returnOnEquity: totalEquity > 0 ? (netIncome / totalEquity) * 100 : 0
+      },
+      efficiency: {
+        assetTurnover: totalAssets > 0 ? totalRevenue / totalAssets : 0,
+        receivablesTurnover: 0, // TODO: Calculate from A/R data
+        payablesTurnover: 0, // TODO: Calculate from A/P data
+        inventoryTurnover: 0 // TODO: Calculate from inventory data
+      },
+      leverage: {
+        debtToEquity: totalEquity > 0 ? totalLiabilities / totalEquity : 0,
+        debtToAssets: totalAssets > 0 ? totalLiabilities / totalAssets : 0,
+        equityMultiplier: totalEquity > 0 ? totalAssets / totalEquity : 0
+      }
+    };
+  } catch (error) {
+    console.error('Error calculating financial ratios:', error);
+    throw new Error('Failed to calculate financial ratios');
+  }
+}
+
 // --- UTILITY FUNCTIONS ---
 
 export async function getBusinessPartners(businessUnitId: string, type?: BusinessPartnerType) {
@@ -952,5 +1225,105 @@ export async function getAccountsForDropdown(businessUnitId: string, accountType
   } catch (error) {
     console.error('Error fetching accounts:', error);
     return [];
+  }
+}
+
+export async function getAccountingPeriods(filters: AccountingPeriodFilters) {
+  try {
+    const where: any = { businessUnitId: filters.businessUnitId };
+    
+    if (filters.status) where.status = filters.status;
+    if (filters.year) {
+      const startOfYear = new Date(filters.year, 0, 1);
+      const endOfYear = new Date(filters.year, 11, 31);
+      where.startDate = { gte: startOfYear };
+      where.endDate = { lte: endOfYear };
+    }
+
+    return await prismadb.accountingPeriod.findMany({
+      where,
+      include: {
+        businessUnit: { select: { id: true, name: true } },
+        _count: { select: { journalEntries: true } }
+      },
+      orderBy: { startDate: 'desc' }
+    });
+  } catch (error) {
+    console.error('Error fetching accounting periods:', error);
+    return [];
+  }
+}
+
+export async function validateAccountingPeriod(periodId: string) {
+  try {
+    const period = await prismadb.accountingPeriod.findUnique({
+      where: { id: periodId },
+      include: {
+        _count: { select: { journalEntries: true } }
+      }
+    });
+
+    if (!period) {
+      return { isValid: false, canClose: false, errors: ['Period not found'], warnings: [] };
+    }
+
+    const errors: string[] = [];
+    const warnings: string[] = [];
+
+    // Check for unbalanced journal entries
+    const journalEntries = await prismadb.journalEntry.findMany({
+      where: {
+        businessUnitId: period.businessUnitId,
+        postingDate: {
+          gte: period.startDate,
+          lte: period.endDate
+        }
+      },
+      include: { lines: true }
+    });
+
+    for (const entry of journalEntries) {
+      const totalDebits = entry.lines.reduce((sum, line) => sum + (line.debit || 0), 0);
+      const totalCredits = entry.lines.reduce((sum, line) => sum + (line.credit || 0), 0);
+      
+      if (Math.abs(totalDebits - totalCredits) >= 0.01) {
+        errors.push(`Journal entry ${entry.docNum} is not balanced`);
+      }
+    }
+
+    // Check for open documents in the period
+    const openARInvoices = await prismadb.aRInvoice.count({
+      where: {
+        businessUnitId: period.businessUnitId,
+        postingDate: { gte: period.startDate, lte: period.endDate },
+        status: DocumentStatus.OPEN
+      }
+    });
+
+    const openAPInvoices = await prismadb.aPInvoice.count({
+      where: {
+        businessUnitId: period.businessUnitId,
+        postingDate: { gte: period.startDate, lte: period.endDate },
+        status: DocumentStatus.OPEN
+      }
+    });
+
+    if (openARInvoices > 0) {
+      warnings.push(`${openARInvoices} open A/R invoices in this period`);
+    }
+
+    if (openAPInvoices > 0) {
+      warnings.push(`${openAPInvoices} open A/P invoices in this period`);
+    }
+
+    return {
+      isValid: errors.length === 0,
+      canClose: errors.length === 0 && period.status === PeriodStatus.OPEN,
+      errors,
+      warnings
+    };
+  } catch (error) {
+    console.error('Error validating accounting period:', error);
+    return { isValid: false, canClose: false, errors: ['Validation failed'], warnings: [] };
   }
 }

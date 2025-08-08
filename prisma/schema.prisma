@@ -54,6 +54,7 @@ model BusinessUnit {
 
   // Module-specific data
   accounts           GlAccount[]
+  accountingPeriods  AccountingPeriod[]
   bankAccounts       BankAccount[]
   businessPartners   BusinessPartner[]
   inventoryItems     InventoryItem[]
@@ -521,23 +522,25 @@ model OutgoingPayment {
 }
 
 model Deposit {
-  id             String       @id @default(uuid())
-  docNum         String       @unique
+  id             String         @id @default(uuid())
+  docNum         String         @unique
   businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  businessUnit   BusinessUnit   @relation(fields: [businessUnitId], references: [id])
   bankAccountId  String
-  bankAccount    BankAccount  @relation(fields: [bankAccountId], references: [id])
-
-  depositDate DateTime
-  amount      Float
-
-  journalEntryId String?       @unique
-  journalEntry   JournalEntry? @relation(fields: [journalEntryId], references: [id])
-
-  createdAt DateTime @default(now())
+  bankAccount    BankAccount    @relation(fields: [bankAccountId], references: [id])
+  depositDate    DateTime
+  amount         Float
+  status         PeriodStatus   @default(OPEN)
+  createdAt      DateTime       @default(now())
+  journalEntries JournalEntry[] // FIX: This is now a one-to-many relation
 }
 
 // --- FINANCIALS ---
+
+enum PeriodStatus {
+  OPEN
+  CLOSED
+}
 
 model GlAccount {
   id             String       @id @default(uuid())
@@ -566,16 +569,18 @@ model AccountType {
 }
 
 model JournalEntry {
-  id             String       @id @default(uuid())
-  docNum         String       @unique
-  postingDate    DateTime
-  remarks        String?
-  authorId       String
-  author         User         @relation("AuthorToJE", fields: [authorId], references: [id])
-  approverId     String?
-  approver       User?        @relation("ApproverToJE", fields: [approverId], references: [id])
-  businessUnitId String
-  businessUnit   BusinessUnit @relation(fields: [businessUnitId], references: [id])
+  id                 String            @id @default(uuid())
+  docNum             String            @unique
+  postingDate        DateTime
+  remarks            String?
+  authorId           String
+  author             User              @relation("AuthorToJE", fields: [authorId], references: [id])
+  approverId         String?
+  approver           User?             @relation("ApproverToJE", fields: [approverId], references: [id])
+  businessUnitId     String
+  businessUnit       BusinessUnit      @relation(fields: [businessUnitId], references: [id])
+  accountingPeriodId String?
+  accountingPeriod   AccountingPeriod? @relation(fields: [accountingPeriodId], references: [id])
 
   lines JournalEntryLine[]
 
@@ -584,7 +589,8 @@ model JournalEntry {
   apInvoice       APInvoice?
   incomingPayment IncomingPayment?
   outgoingPayment OutgoingPayment?
-  deposit         Deposit?
+  depositId       String?
+  deposit         Deposit?         @relation(fields: [depositId], references: [id])
 
   createdAt DateTime @default(now())
 }
@@ -934,4 +940,17 @@ model FinancialReportLine {
   label             String
   value             Float
   order             Int
+}
+
+model AccountingPeriod {
+  id             String         @id @default(uuid())
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  status         PeriodStatus   @default(OPEN)
+  businessUnitId String
+  businessUnit   BusinessUnit   @relation(fields: [businessUnitId], references: [id])
+  journalEntries JournalEntry[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
 }
